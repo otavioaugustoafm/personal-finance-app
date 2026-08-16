@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 from src.database import get_db_connection
 import psycopg
+from fastapi.middleware.cors import CORSMiddleware
 
 # Importando o módulo de rotas que acabamos de criar
 from src.routes import categorias
@@ -13,6 +14,14 @@ from src.routes import resumo
 
 
 app = FastAPI(title="API Financeira Serverless")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Permite o React (localhost:5173) falar com a API
+    allow_credentials=True,
+    allow_methods=["*"], # Permite POST, GET, OPTIONS, DELETE, PUT
+    allow_headers=["*"],
+)
 
 # Acoplando as rotas de categorias na aplicação principal
 app.include_router(categorias.router)

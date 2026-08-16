@@ -1,3 +1,4 @@
+import calendar
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from src.database import get_db_connection
@@ -5,99 +6,86 @@ from src.dependencies import obter_usuario_logado
 from psycopg.rows import dict_row
 import psycopg
 
-router = APIRouter(prefix="/api/v1/resumo", tags=["Resumo Consolidado"])
+router = APIRouter(prefix="/api/v1/resumo", tags=["Resumo"])
+
+def extrair_id(usuario):
+    if isinstance(usuario, str):
+        return usuario
+    elif isinstance(usuario, dict):
+        return usuario.get("id")
+    return getattr(usuario, "id", str(usuario))
 
 @router.get("", status_code=status.HTTP_200_OK)
-def obter_resumo_mensal(
-    ano: int = Query(..., description="Ano de referência"),
-    mes: int = Query(..., ge=1, le=12, description="Mês de referência"),
-    usuario_id: str = Depends(obter_usuario_logado)
+def obter_resumo(
+    ano: int = Query(..., description="Ano"),
+    mes: int = Query(..., description="Mês"),
+    usuario_id = Depends(obter_usuario_logado)
 ):
     try:
+        user_id = extrair_id(usuario_id)
         with get_db_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                # 1. Busca todas as Entradas do usuário
+                # ADICIONADO A FORMA_PAGAMENTO NA QUERY
                 cur.execute("""
-                    SELECT valor, data_recebimento, confirmada, regra_recorrencia
-                    FROM entradas WHERE usuario_id = %s;
-                """, (usuario_id,))
-                entradas_db = cur.fetchall()
+                    SELECT valor, tipo_saida, pago, is_reembolsavel, data_vencimento, regra_recorrencia, forma_pagamento
+                    FROM saidas
+                    WHERE usuario_id = %s;
+                """, (user_id,))
+                registros = cur.fetchall()
 
-                # 2. Busca todas as Saídas do usuário
-                cur.execute("""
-                    SELECT valor, data_vencimento, pago, regra_recorrencia, is_reembolsavel, forma_pagamento
-                    FROM saidas WHERE usuario_id = %s;
-                """, (usuario_id,))
-                saidas_db = cur.fetchall()
+        saldo_atual_mes = 0.0
+        saldo_projetado_mes = 0.0
+        fatura_pendente_mes = 0.0
+        a_reembolsar_mes = 0.0
 
-        # --- PROCESSAMENTO DE ENTRADAS ---
-        meses_fechados_entradas = {
-            (e["data_recebimento"].year, e["data_recebimento"].month) 
-            for e in entradas_db if e["regra_recorrencia"] == "DATA_EXATA"
-        }
-        
-        entradas_validas = []
-        for e in entradas_db:
-            if e["regra_recorrencia"] == "DATA_EXATA":
-                if e["data_recebimento"].year == ano and e["data_recebimento"].month == mes:
-                    entradas_validas.append(e)
+        for t in registros:
+            val = float(t["valor"])
+            is_entrada = (t["tipo_saida"] == "ENTRADA")
+            pago = t["pago"]
+            forma_pgto = t.get("forma_pagamento", "")
+            data_original = t["data_vencimento"]
+            regra = t["regra_recorrencia"]
+            
+            pertence_ao_mes = False
+            
+            if regra == "DATA_EXATA":
+                if data_original.year == ano and data_original.month == mes:
+                    pertence_ao_mes = True
             else:
-                if (ano, mes) not in meses_fechados_entradas:
-                    entradas_validas.append(e)
+                ultimo_dia_mes = date(ano, mes, calendar.monthrange(ano, mes)[1])
+                if data_original <= ultimo_dia_mes:
+                    pertence_ao_mes = True
+            
+            if pertence_ao_mes:
+                if not is_entrada and t["is_reembolsavel"]:
+                    a_reembolsar_mes += val
 
-        # --- PROCESSAMENTO DE SAÍDAS ---
-        meses_fechados_saidas = {
-            (s["data_vencimento"].year, s["data_vencimento"].month) 
-            for s in saidas_db if s["regra_recorrencia"] == "DATA_EXATA"
-        }
-        
-        saidas_validas = []
-        for s in saidas_db:
-            if s["regra_recorrencia"] == "DATA_EXATA":
-                if s["data_vencimento"].year == ano and s["data_vencimento"].month == mes:
-                    saidas_validas.append(s)
-            else:
-                if (ano, mes) not in meses_fechados_saidas:
-                    saidas_validas.append(s)
-
-        # --- A MATEMÁTICA DO DASHBOARD ---
-        
-        # 1. SALDO ATUAL: Dinheiro vivo na conta hoje
-        # Entradas confirmadas MENOS Saídas pagas (Cartão de crédito pago também sai da conta)
-        total_entradas_confirmadas = sum(float(e["valor"]) for e in entradas_validas if e["confirmada"])
-        total_saidas_pagas = sum(float(s["valor"]) for s in saidas_validas if s["pago"])
-        saldo_atual = total_entradas_confirmadas - total_saidas_pagas
-        
-        # 2. SALDO PROJETADO: Expectativa de fim de mês 
-        # Total de Entradas MENOS Total de Saídas Pessoais (ignora o que a galera/mãe vai devolver)
-        total_entradas_mes = sum(float(e["valor"]) for e in entradas_validas)
-        total_saidas_pessoais = sum(float(s["valor"]) for s in saidas_validas if not s["is_reembolsavel"])
-        saldo_projetado = total_entradas_mes - total_saidas_pessoais
-
-        # 3. CARTÃO DE CRÉDITO: Fatura pendente
-        # Soma tudo que é crédito e ainda não foi pago
-        fatura_pendente = sum(
-            float(s["valor"]) for s in saidas_validas 
-            if s["forma_pagamento"] == "CREDITO" and not s["pago"]
-        )
-
-        # 4. TERCEIROS: Dinheiro que precisa voltar pro seu bolso (Mãe/Amigos)
-        total_reembolsavel = sum(float(s["valor"]) for s in saidas_validas if s["is_reembolsavel"])
+                if is_entrada:
+                    if pago:
+                        saldo_atual_mes += val 
+                    saldo_projetado_mes += val 
+                else:
+                    if pago:
+                        saldo_atual_mes -= val 
+                    else:
+                        # LÓGICA RESTAURADA: Só vai para a fatura se for CRÉDITO
+                        if forma_pgto == "CREDITO":
+                            fatura_pendente_mes += val 
+                        
+                    saldo_projetado_mes -= val 
 
         return {
-            "periodo": {"ano": ano, "mes": mes},
             "contas_bancarias": {
-                "saldo_atual_em_conta": round(saldo_atual, 2),
-                "saldo_projetado_fim_do_mes": round(saldo_projetado, 2)
+                "saldo_atual_em_conta": saldo_atual_mes,
+                "saldo_projetado_fim_do_mes": saldo_projetado_mes
             },
             "cartao_de_credito": {
-                "fatura_atual_pendente": round(fatura_pendente, 2)
+                "fatura_atual_pendente": fatura_pendente_mes
             },
             "terceiros": {
-                "valores_a_serem_reembolsados": round(total_reembolsavel, 2)
+                "valores_a_serem_reembolsados": a_reembolsar_mes
             }
         }
-
     except psycopg.Error as erro:
-        print(f"Erro no banco de dados: {erro}")
-        raise HTTPException(status_code=500, detail="Erro interno ao gerar o resumo consolidado.")
+        print(f"Erro no banco ao gerar resumo: {erro}")
+        raise HTTPException(status_code=500, detail="Erro interno ao gerar resumo")
