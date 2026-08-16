@@ -18,7 +18,7 @@ export default function Login({ onLoginSuccess, irParaCadastro }: LoginProps) {
     setCarregando(true);
 
     try {
-      const resposta = await axios.post("http://127.0.0.1:8000/api/v1/auth/login", {
+      const resposta = await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/auth/login", {
         email,
         senha,
       });

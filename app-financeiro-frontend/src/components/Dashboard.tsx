@@ -185,10 +185,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const mesNum = mesSelecionado + 1;
 
       const [resResumo, resSaidas, resGrafico, resCategorias] = await Promise.all([
-        axios.get(`http://127.0.0.1:8000/api/v1/resumo?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: resumo })),
-        axios.get(`http://127.0.0.1:8000/api/v1/saidas?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: { saidas: [] } })),
-        axios.get(`http://127.0.0.1:8000/api/v1/saidas/grafico/categorias?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: [] })),
-        axios.get("http://127.0.0.1:8000/api/v1/categorias", { headers }).catch(() => ({ data: { categorias: [] } })),
+        axios.get(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/resumo?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: resumo })),
+        axios.get(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: { saidas: [] } })),
+        axios.get(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/grafico/categorias?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: [] })),
+        axios.get("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias", { headers }).catch(() => ({ data: { categorias: [] } })),
       ]);
 
       setResumo(resResumo.data);
@@ -237,9 +237,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const headers = { Authorization: `Bearer ${token}` };
 
       if (editando) {
-        await axios.put(`http://127.0.0.1:8000/api/v1/saidas/${editando.id}`, dados, { headers });
+        await axios.put(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/${editando.id}`, dados, { headers });
       } else {
-        await axios.post("http://127.0.0.1:8000/api/v1/saidas", {
+        await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas", {
           ...dados,
           data_vencimento: dados.data_vencimento || new Date().toISOString().split('T')[0]
         }, { headers });
@@ -257,7 +257,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     if (confirm("Tem certeza que deseja excluir este lançamento?")) {
       try {
         const token = localStorage.getItem("token") || "";
-        await axios.delete(`http://127.0.0.1:8000/api/v1/saidas/${id}`, {
+        await axios.delete(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         carregarDadosReais();
@@ -275,7 +275,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         const mesNum = mesSelecionado + 1;
         
         // 👇 A MUDANÇA ESTÁ AQUI: Trocamos axios.put para axios.post e atualizamos a URL
-        await axios.post(`http://127.0.0.1:8000/api/v1/saidas/pagar-fatura?ano=${anoSelecionado}&mes=${mesNum}`, {}, {
+        await axios.post(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/pagar-fatura?ano=${anoSelecionado}&mes=${mesNum}`, {}, {
           headers: { Authorization: `Bearer ${token}` }
         });
         

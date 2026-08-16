@@ -22,7 +22,7 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
   const carregarCategorias = async () => {
     try {
       const token = localStorage.getItem("token") || "";
-      const res = await axios.get("http://127.0.0.1:8000/api/v1/categorias", {
+      const res = await axios.get("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias", {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCategorias(res.data.categorias || []);
@@ -46,7 +46,7 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
     try {
       const token = localStorage.getItem("token") || "";
       await axios.post(
-        "http://127.0.0.1:8000/api/v1/categorias",
+        "https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias",
         { nome: novaCategoria.trim(), tipo: tipoNovaCategoria },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -64,7 +64,7 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
     if (confirm("Tem certeza que deseja excluir esta categoria? Lançamentos atrelados a ela podem perder a referência.")) {
       try {
         const token = localStorage.getItem("token") || "";
-        await axios.delete(`http://127.0.0.1:8000/api/v1/categorias/${id}`, {
+        await axios.delete(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         carregarCategorias();

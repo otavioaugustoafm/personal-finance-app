@@ -20,14 +20,14 @@ export default function Cadastro({ onCadastroSuccess, irParaLogin }: CadastroPro
 
     try {
       // Cria a conta no FastAPI
-      await axios.post("http://127.0.0.1:8000/api/v1/usuarios", {
+      await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/usuarios", {
         nome,
         email,
         senha,
       });
 
       // Logo após cadastrar, faz o login automático para pegar o token
-      const respostaLogin = await axios.post("http://127.0.0.1:8000/api/v1/auth/login", {
+      const respostaLogin = await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/auth/login", {
         email,
         senha,
       });

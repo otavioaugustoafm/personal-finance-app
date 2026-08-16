@@ -32,7 +32,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
     const carregarCategorias = async () => {
       try {
         const token = localStorage.getItem("token") || "";
-        const res = await axios.get("http://127.0.0.1:8000/api/v1/categorias", {
+        const res = await axios.get("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias", {
           headers: { Authorization: `Bearer ${token}` }
         });
         setCategoriasGlobais(res.data.categorias || []);
