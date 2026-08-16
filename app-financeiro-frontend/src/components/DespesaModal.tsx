@@ -24,6 +24,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
   const [pago, setPago] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("PIX");
   const [isReembolsavel, setIsReembolsavel] = useState(false);
+  const [quantidadeParcelas, setQuantidadeParcelas] = useState("1");
   
   const [categoriasGlobais, setCategoriasGlobais] = useState<Categoria[]>([]);
 
@@ -42,10 +43,8 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
     if (isOpen) carregarCategorias();
   }, [isOpen]);
 
-  // Filtra as categorias de acordo com o botão selecionado (Entrada ou Saída)
   const categoriasFiltradas = categoriasGlobais.filter(c => c.tipo === tipoSaida);
 
-  // Efeito super importante: se mudar de Saída para Entrada, ele muda a categoria selecionada para evitar bugs
   useEffect(() => {
     if (categoriasFiltradas.length > 0 && !categoriasFiltradas.find(c => c.nome === categoria)) {
       setCategoria(categoriasFiltradas[0].nome);
@@ -62,6 +61,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
       setPago(despesaParaEditar.pago || false);
       setFormaPagamento(despesaParaEditar.forma_pagamento || "PIX");
       setIsReembolsavel(despesaParaEditar.is_reembolsavel || false);
+      setQuantidadeParcelas("1"); // Edições tratam a parcela individual
     } else {
       setDescricao("");
       setValor("");
@@ -70,6 +70,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
       setPago(false);
       setFormaPagamento("PIX");
       setIsReembolsavel(false);
+      setQuantidadeParcelas("1");
     }
   }, [despesaParaEditar, isOpen]);
 
@@ -78,7 +79,6 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Monta o payload base
     const payload: any = {
       descricao,
       valor: parseFloat(valor.replace(",", ".")),
@@ -91,9 +91,9 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
       regra_recorrencia: "DATA_EXATA",
     };
 
-    // Só envia parcelas se for uma criação nova
+    // Só manda parcelas se for uma criação nova
     if (!despesaParaEditar) {
-      payload.quantidade_parcelas = 1;
+      payload.quantidade_parcelas = parseInt(quantidadeParcelas) || 1;
     }
 
     onSave(payload);
@@ -125,7 +125,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-zinc-400">Descrição</label>
-            <input required type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Salário, Supermercado..." className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
+            <input required type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Tênis de Corrida..." className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -134,7 +134,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
               <input required type="number" step="0.01" min="0" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0.00" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Data</label>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Data de Vencimento</label>
               <input required type="date" value={dataVencimento} onChange={(e) => setDataVencimento(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
             </div>
           </div>
@@ -165,6 +165,21 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
               </div>
             )}
           </div>
+
+          {/* Campo de Parcelas (Aparece apenas ao criar uma nova Saída) */}
+          {!despesaParaEditar && tipoSaida === "SAIDA" && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Quantidade de Parcelas</label>
+              <input 
+                type="number" 
+                min="1" 
+                max="60" 
+                value={quantidadeParcelas} 
+                onChange={(e) => setQuantidadeParcelas(e.target.value)} 
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" 
+              />
+            </div>
+          )}
 
           <div className="mt-4 flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             <label className="flex cursor-pointer items-center gap-3">
