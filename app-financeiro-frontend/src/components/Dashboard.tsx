@@ -44,6 +44,7 @@ interface Saida {
   pago: boolean;
   tipo_saida: string;
   is_reembolsavel: boolean;
+  forma_pagamento?: string; // NOVO CAMPO ADICIONADO
 }
 
 interface GastoPorCategoria {
@@ -175,6 +176,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>("todas");
   const [statusSelecionado, setStatusSelecionado] = useState<StatusFiltro>("todos");
+  
+  // NOVO STATE PARA O FILTRO DE PAGAMENTO
+  const [formaPagamentoSelecionada, setFormaPagamentoSelecionada] = useState<string>("todas"); 
 
   const [listaCategorias, setListaCategorias] = useState<string[]>([]);
 
@@ -220,13 +224,27 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         (statusSelecionado === "pendente" && !saida.pago) ||
         (statusSelecionado === "reembolsavel" && saida.is_reembolsavel);
         
-      return combinaCategoria && combinaStatus;
+      // NOVO FILTRO DE MÉTODO DE PAGAMENTO APLICADO AQUI
+      const combinaForma = 
+        formaPagamentoSelecionada === "todas" || 
+        (saida.forma_pagamento && saida.forma_pagamento.toUpperCase() === formaPagamentoSelecionada.toUpperCase());
+        
+      return combinaCategoria && combinaStatus && combinaForma;
     });
-  }, [saidas, categoriaSelecionada, statusSelecionado]);
+  }, [saidas, categoriaSelecionada, statusSelecionado, formaPagamentoSelecionada]);
 
-  const totalFiltrado = useMemo(
+  // SOMA APENAS AS DESPESAS FILTRADAS (Sempre Positivo)
+  const totalDespesasFiltradas = useMemo(
     () => saidasFiltradas.reduce((soma, saida) => {
-      return saida.tipo_saida === "ENTRADA" ? soma + saida.valor : soma - saida.valor;
+      return saida.tipo_saida !== "ENTRADA" ? soma + saida.valor : soma;
+    }, 0),
+    [saidasFiltradas]
+  );
+
+  // SOMA APENAS AS RECEITAS FILTRADAS
+  const totalReceitasFiltradas = useMemo(
+    () => saidasFiltradas.reduce((soma, saida) => {
+      return saida.tipo_saida === "ENTRADA" ? soma + saida.valor : soma;
     }, 0),
     [saidasFiltradas]
   );
@@ -274,7 +292,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         const token = localStorage.getItem("token") || "";
         const mesNum = mesSelecionado + 1;
         
-        // 👇 A MUDANÇA ESTÁ AQUI: Trocamos axios.put para axios.post e atualizamos a URL
         await axios.post(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/pagar-fatura?ano=${anoSelecionado}&mes=${mesNum}`, {}, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -391,6 +408,23 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   {categoriasDisponiveis.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
+              
+              {/* NOVO CAMPO DE FORMA DE PAGAMENTO INSERIDO AQUI */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Tipo de Gasto</label>
+                <select 
+                  value={formaPagamentoSelecionada} 
+                  onChange={(e) => setFormaPagamentoSelecionada(e.target.value)} 
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                >
+                  <option value="todas">Todos os tipos</option>
+                  <option value="CREDITO">Cartão de Crédito</option>
+                  <option value="DEBITO">Cartão de Débito</option>
+                  <option value="PIX">PIX</option>
+                  <option value="DINHEIRO">Dinheiro</option>
+                </select>
+              </div>
+
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Status</label>
                 <div className="flex flex-col gap-2">
@@ -417,7 +451,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900 shadow-lg">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
             <h2 className="text-sm font-semibold text-zinc-200">Lançamentos do mês</h2>
-            <p className="text-sm text-zinc-400">Balanço filtrado: <span className="font-semibold text-amber-300">{formatarMoeda(totalFiltrado)}</span></p>
+            
+            {/* CABEÇALHO ATUALIZADO: Mostrando Receitas e Despesas isoladas */}
+            <div className="flex gap-4 text-sm text-zinc-400">
+               <p>Receitas: <span className="font-semibold text-emerald-400">{formatarMoeda(totalReceitasFiltradas)}</span></p>
+               <p>Despesas: <span className="font-semibold text-rose-400">{formatarMoeda(totalDespesasFiltradas)}</span></p>
+            </div>
           </div>
           <div className="hidden grid-cols-12 gap-4 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-500 sm:grid">
             <span className="col-span-3">Descrição</span>
