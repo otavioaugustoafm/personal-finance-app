@@ -31,7 +31,10 @@ interface ResumoFinanceiro {
     saldo_atual_em_conta: number;
     saldo_projetado_fim_do_mes: number;
   };
-  cartao_de_credito: { fatura_atual_pendente: number };
+  cartao_de_credito: { 
+    fatura_atual_pendente: number;
+    total_fatura: number;
+  };
   terceiros: { valores_a_serem_reembolsados: number };
 }
 
@@ -44,7 +47,7 @@ interface Saida {
   pago: boolean;
   tipo_saida: string;
   is_reembolsavel: boolean;
-  forma_pagamento?: string; // NOVO CAMPO ADICIONADO
+  forma_pagamento?: string;
 }
 
 interface GastoPorCategoria {
@@ -161,7 +164,7 @@ interface DashboardProps {
 export default function Dashboard({ onLogout }: DashboardProps) {
   const [resumo, setResumo] = useState<ResumoFinanceiro>({
     contas_bancarias: { saldo_atual_em_conta: 0, saldo_projetado_fim_do_mes: 0 },
-    cartao_de_credito: { fatura_atual_pendente: 0 },
+    cartao_de_credito: { fatura_atual_pendente: 0, total_fatura: 0 },
     terceiros: { valores_a_serem_reembolsados: 0 },
   });
   const [saidas, setSaidas] = useState<Saida[]>([]);
@@ -176,8 +179,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>("todas");
   const [statusSelecionado, setStatusSelecionado] = useState<StatusFiltro>("todos");
-  
-  // NOVO STATE PARA O FILTRO DE PAGAMENTO
   const [formaPagamentoSelecionada, setFormaPagamentoSelecionada] = useState<string>("todas"); 
 
   const [listaCategorias, setListaCategorias] = useState<string[]>([]);
@@ -224,7 +225,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         (statusSelecionado === "pendente" && !saida.pago) ||
         (statusSelecionado === "reembolsavel" && saida.is_reembolsavel);
         
-      // NOVO FILTRO DE MÉTODO DE PAGAMENTO APLICADO AQUI
       const combinaForma = 
         formaPagamentoSelecionada === "todas" || 
         (saida.forma_pagamento && saida.forma_pagamento.toUpperCase() === formaPagamentoSelecionada.toUpperCase());
@@ -233,7 +233,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     });
   }, [saidas, categoriaSelecionada, statusSelecionado, formaPagamentoSelecionada]);
 
-  // SOMA APENAS AS DESPESAS FILTRADAS (Sempre Positivo)
   const totalDespesasFiltradas = useMemo(
     () => saidasFiltradas.reduce((soma, saida) => {
       return saida.tipo_saida !== "ENTRADA" ? soma + saida.valor : soma;
@@ -241,7 +240,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     [saidasFiltradas]
   );
 
-  // SOMA APENAS AS RECEITAS FILTRADAS
   const totalReceitasFiltradas = useMemo(
     () => saidasFiltradas.reduce((soma, saida) => {
       return saida.tipo_saida === "ENTRADA" ? soma + saida.valor : soma;
@@ -343,11 +341,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <CardResumo titulo="Saldo projetado" valor={resumo.contas_bancarias.saldo_projetado_fim_do_mes} icone={<PiggyBank className="h-5 w-5" />} esquemaCor="verdeAgua" tooltip="O que vai sobrar livre na conta ao fim do mês, após quitar a fatura e receber o que falta." />
           
           <CardResumo 
-            titulo="Fatura atual" 
-            valor={resumo.cartao_de_credito.fatura_atual_pendente} 
+            titulo="Fatura do mês" 
+            valor={resumo.cartao_de_credito.total_fatura} 
             icone={<CreditCard className="h-5 w-5" />} 
             esquemaCor="vermelho" 
-            tooltip="Fatura em aberto. Clique no botão Pagar quando quitar." 
+            tooltip={`Total de gastos no crédito. Pendente para pagar: ${formatarMoeda(resumo.cartao_de_credito.fatura_atual_pendente)}`} 
             action={
               resumo.cartao_de_credito.fatura_atual_pendente > 0 ? (
                 <button 
@@ -356,6 +354,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 >
                   PAGAR FATURA
                 </button>
+              ) : resumo.cartao_de_credito.total_fatura > 0 ? (
+                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold tracking-wide text-emerald-400">
+                  PAGA
+                </span>
               ) : null
             }
           />
@@ -409,7 +411,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 </select>
               </div>
               
-              {/* NOVO CAMPO DE FORMA DE PAGAMENTO INSERIDO AQUI */}
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Tipo de Gasto</label>
                 <select 
@@ -452,7 +453,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
             <h2 className="text-sm font-semibold text-zinc-200">Lançamentos do mês</h2>
             
-            {/* CABEÇALHO ATUALIZADO: Mostrando Receitas e Despesas isoladas */}
             <div className="flex gap-4 text-sm text-zinc-400">
                <p>Receitas: <span className="font-semibold text-emerald-400">{formatarMoeda(totalReceitasFiltradas)}</span></p>
                <p>Despesas: <span className="font-semibold text-rose-400">{formatarMoeda(totalDespesasFiltradas)}</span></p>

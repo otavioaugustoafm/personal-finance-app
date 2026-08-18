@@ -25,7 +25,6 @@ def obter_resumo(
         user_id = extrair_id(usuario_id)
         with get_db_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                # ADICIONADO A FORMA_PAGAMENTO NA QUERY
                 cur.execute("""
                     SELECT valor, tipo_saida, pago, is_reembolsavel, data_vencimento, regra_recorrencia, forma_pagamento
                     FROM saidas
@@ -36,7 +35,10 @@ def obter_resumo(
         saldo_atual_mes = 0.0
         saldo_projetado_mes = 0.0
         fatura_pendente_mes = 0.0
+        total_fatura_mes = 0.0
         a_reembolsar_mes = 0.0
+        total_despesas_mes = 0.0 
+        total_receitas_mes = 0.0
 
         for t in registros:
             val = float(t["valor"])
@@ -61,20 +63,26 @@ def obter_resumo(
                     a_reembolsar_mes += val
 
                 if is_entrada:
+                    total_receitas_mes += val
                     if pago:
                         saldo_atual_mes += val 
                     saldo_projetado_mes += val 
                 else:
+                    total_despesas_mes += val
+                    
+                    if forma_pgto == "CREDITO":
+                        total_fatura_mes += val
+                    
                     if pago:
                         saldo_atual_mes -= val 
                     else:
-                        # LÓGICA RESTAURADA: Só vai para a fatura se for CRÉDITO
                         if forma_pgto == "CREDITO":
                             fatura_pendente_mes += val 
                         
                     saldo_projetado_mes -= val 
 
-        saldo_projetado_mes +=a_reembolsar_mes
+        # Adiciona o dinheiro que vai entrar de volta ao saldo projetado
+        saldo_projetado_mes += a_reembolsar_mes
 
         return {
             "contas_bancarias": {
@@ -82,10 +90,15 @@ def obter_resumo(
                 "saldo_projetado_fim_do_mes": saldo_projetado_mes
             },
             "cartao_de_credito": {
-                "fatura_atual_pendente": fatura_pendente_mes
+                "fatura_atual_pendente": fatura_pendente_mes,
+                "total_fatura": total_fatura_mes
             },
             "terceiros": {
                 "valores_a_serem_reembolsados": a_reembolsar_mes
+            },
+            "totais": {
+                "total_despesas": total_despesas_mes,
+                "total_receitas": total_receitas_mes
             }
         }
     except psycopg.Error as erro:
