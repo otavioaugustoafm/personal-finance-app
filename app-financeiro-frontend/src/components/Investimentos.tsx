@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ModalAporte from "./ModalAporte";
 import { 
   Briefcase, 
   TrendingUp, 
@@ -57,10 +58,12 @@ function CardResumo({ titulo, valor, subtitulo, icone, esquemaCor }: any) {
 export default function Investimentos() {
   const [carteira, setCarteira] = useState<ResumoCarteira>({ patrimonio_total: 0, ativos: [] });
   const [loading, setLoading] = useState(true);
+  const [modalAberto, setModalAberto] = useState(false); // NOVO: Controle do Modal
 
   const carregarCarteira = async () => {
     try {
       const token = localStorage.getItem("token") || "";
+      // Lembre-se de verificar se sua URL da AWS está correta aqui
       const resposta = await axios.get("https://SEU_API_GATEWAY_AQUI.amazonaws.com/api/v1/investimentos", {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -98,7 +101,7 @@ export default function Investimentos() {
             </button>
 
             <button
-              onClick={() => alert("Modal de cadastro será construído a seguir!")}
+              onClick={() => setModalAberto(true)} // ATUALIZADO: Abre o modal
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-500"
             >
               <Plus className="h-4 w-4" /> Novo Aporte
@@ -202,6 +205,14 @@ export default function Investimentos() {
           </ul>
         </section>
       </div>
+
+      {/* RENDERIZAÇÃO DO MODAL ADICIONADA AQUI */}
+      <ModalAporte 
+        isOpen={modalAberto} 
+        onClose={() => setModalAberto(false)} 
+        onSuccess={carregarCarteira} 
+      />
+      
     </div>
   );
 }
