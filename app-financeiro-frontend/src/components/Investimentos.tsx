@@ -64,7 +64,7 @@ export default function Investimentos() {
     try {
       const token = localStorage.getItem("token") || "";
       // Lembre-se de verificar se sua URL da AWS está correta aqui
-      const resposta = await axios.get("https://SEU_API_GATEWAY_AQUI.amazonaws.com/api/v1/investimentos", {
+      const resposta = await axios.get("fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/investimentos", {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCarteira(resposta.data);

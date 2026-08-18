@@ -30,7 +30,7 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
       const token = localStorage.getItem("token");
       
       // Lembre-se de colocar a sua URL da AWS aqui!
-      await axios.post("https://SEU_API_GATEWAY_AQUI.amazonaws.com/api/v1/investimentos", {
+      await axios.post("fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/investimentos", {
         ticker: ticker.toUpperCase(), // Força o maiúsculo antes de enviar
         categoria,
         quantidade: parseFloat(quantidade.replace(",", ".")),
