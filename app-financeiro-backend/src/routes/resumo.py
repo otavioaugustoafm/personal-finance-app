@@ -74,6 +74,8 @@ def obter_resumo(
                         
                     saldo_projetado_mes -= val 
 
+        saldo_projetado_mes +=a_reembolsar_mes
+
         return {
             "contas_bancarias": {
                 "saldo_atual_em_conta": saldo_atual_mes,
