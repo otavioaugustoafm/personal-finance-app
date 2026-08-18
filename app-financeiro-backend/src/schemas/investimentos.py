@@ -2,11 +2,12 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
-class InvestimentoBase(BaseModel):
+class TransacaoCreate(BaseModel):
     ticker: str = Field(..., description="Código do ativo (ex: TRXF11)")
     categoria: str = Field(..., description="FII, ACAO, ou ETF")
-    quantidade: float = Field(..., ge=0, description="Quantidade de cotas/ações")
-    preco_medio: float = Field(..., ge=0, description="Preço médio de compra")
+    tipo: str = Field(..., description="COMPRA ou VENDA")
+    quantidade: float = Field(..., gt=0, description="Quantidade da boleta")
+    preco_unitario: float = Field(..., gt=0, description="Preço pago ou vendido")
     percentual_alvo: float = Field(0.0, ge=0, le=100, description="Meta percentual na carteira")
 
     @field_validator('ticker')
@@ -14,18 +15,10 @@ class InvestimentoBase(BaseModel):
     def formatar_ticker(cls, v: str) -> str:
         return v.strip().upper()
         
-    @field_validator('categoria')
+    @field_validator('categoria', 'tipo')
     @classmethod
-    def formatar_categoria(cls, v: str) -> str:
+    def formatar_maiusculas(cls, v: str) -> str:
         return v.strip().upper()
-
-class InvestimentoCreate(InvestimentoBase):
-    pass
-
-class InvestimentoUpdate(BaseModel):
-    quantidade: Optional[float] = Field(None, ge=0)
-    preco_medio: Optional[float] = Field(None, ge=0)
-    percentual_alvo: Optional[float] = Field(None, ge=0, le=100)
 
 class InvestimentoResponse(BaseModel):
     id: str

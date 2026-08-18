@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import axios from "axios";
 
 interface ModalAporteProps {
@@ -11,14 +11,14 @@ interface ModalAporteProps {
 export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteProps) {
   const [ticker, setTicker] = useState("");
   const [categoria, setCategoria] = useState("FII");
+  const [tipo, setTipo] = useState<"COMPRA" | "VENDA">("COMPRA");
   const [quantidade, setQuantidade] = useState("");
-  const [precoMedio, setPrecoMedio] = useState("");
+  const [precoUnitario, setPrecoUnitario] = useState("");
   const [percentualAlvo, setPercentualAlvo] = useState("");
   
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
-  // Se não estiver aberto, não renderiza nada
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,27 +29,33 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
     try {
       const token = localStorage.getItem("token");
       
-      // Lembre-se de colocar a sua URL da AWS aqui!
-      await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/investimentos", {
-        ticker: ticker.toUpperCase(), // Força o maiúsculo antes de enviar
+      // ATENÇÃO: Cole a sua URL correta do AWS API Gateway aqui de novo!
+      await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/prod/api/v1/investimentos", {
+        ticker: ticker.toUpperCase(),
         categoria,
+        tipo, // Agora enviamos se é COMPRA ou VENDA
         quantidade: parseFloat(quantidade.replace(",", ".")),
-        preco_medio: parseFloat(precoMedio.replace(",", ".")),
+        preco_unitario: parseFloat(precoUnitario.replace(",", ".")), // Agora é unitário, o PM é calculado lá no Python
         percentual_alvo: parseFloat(percentualAlvo.replace(",", ".") || "0")
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      // Limpa os campos após salvar
+      // Limpa tudo
       setTicker("");
       setQuantidade("");
-      setPrecoMedio("");
+      setPrecoUnitario("");
       setPercentualAlvo("");
+      setTipo("COMPRA");
       
-      onSuccess(); // Avisa a tela principal para recarregar a tabela
-      onClose();   // Fecha o modal
+      onSuccess();
+      onClose();
     } catch (error: any) {
-      setErro(error.response?.data?.detail || "Erro ao adicionar ativo. Verifique os dados.");
+      const erroReal = error.response?.data 
+        ? JSON.stringify(error.response.data) 
+        : error.message;
+        
+      setErro(`ERRO TÉCNICO: ${erroReal}`);
     } finally {
       setLoading(false);
     }
@@ -59,7 +65,7 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-zinc-800 p-5">
-          <h2 className="text-lg font-semibold text-zinc-100">Registrar Novo Aporte</h2>
+          <h2 className="text-lg font-semibold text-zinc-100">Registrar Transação</h2>
           <button onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
             <X className="h-5 w-5" />
           </button>
@@ -71,6 +77,32 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
               {erro}
             </div>
           )}
+
+          {/* SELETOR DE COMPRA / VENDA */}
+          <div className="grid grid-cols-2 gap-3 mb-2">
+            <button
+              type="button"
+              onClick={() => setTipo("COMPRA")}
+              className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium transition-all ${
+                tipo === "COMPRA" 
+                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400" 
+                  : "border-zinc-800 bg-zinc-800/30 text-zinc-500 hover:bg-zinc-800"
+              }`}
+            >
+              <ArrowDownCircle className="h-4 w-4" /> Compra
+            </button>
+            <button
+              type="button"
+              onClick={() => setTipo("VENDA")}
+              className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium transition-all ${
+                tipo === "VENDA" 
+                  ? "border-rose-500/50 bg-rose-500/10 text-rose-400" 
+                  : "border-zinc-800 bg-zinc-800/30 text-zinc-500 hover:bg-zinc-800"
+              }`}
+            >
+              <ArrowUpCircle className="h-4 w-4" /> Venda
+            </button>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
@@ -101,7 +133,7 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-zinc-400">Quantidade</label>
+              <label className="text-xs font-medium text-zinc-400">Qtd da Boleta</label>
               <input
                 type="number"
                 step="0.0001"
@@ -113,31 +145,33 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-zinc-400">Preço Médio (R$)</label>
+              <label className="text-xs font-medium text-zinc-400">Preço Unitário (R$)</label>
               <input
                 type="number"
                 step="0.01"
                 required
                 placeholder="Ex: 105.50"
-                value={precoMedio}
-                onChange={(e) => setPrecoMedio(e.target.value)}
+                value={precoUnitario}
+                onChange={(e) => setPrecoUnitario(e.target.value)}
                 className="w-full rounded-xl border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-zinc-400">Percentual Alvo (%) na Carteira</label>
-            <input
-              type="number"
-              step="0.1"
-              placeholder="Ex: 15"
-              value={percentualAlvo}
-              onChange={(e) => setPercentualAlvo(e.target.value)}
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <p className="text-[10px] text-zinc-500">Iremos usar isso para a IA te sugerir onde aportar.</p>
-          </div>
+          {/* Oculta a meta se for uma Venda, afinal meta se faz comprando! */}
+          {tipo === "COMPRA" && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-400">Percentual Alvo (%) na Carteira</label>
+              <input
+                type="number"
+                step="0.1"
+                placeholder="Ex: 15"
+                value={percentualAlvo}
+                onChange={(e) => setPercentualAlvo(e.target.value)}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+          )}
 
           <div className="mt-6 flex justify-end gap-3 border-t border-zinc-800 pt-5">
             <button
@@ -150,9 +184,11 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50 ${
+                tipo === "COMPRA" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-rose-600 hover:bg-rose-500"
+              }`}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar Aporte"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Salvar ${tipo}`}
             </button>
           </div>
         </form>

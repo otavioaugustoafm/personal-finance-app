@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from src.database import get_db_connection
 from src.dependencies import obter_usuario_logado
-from src.schemas.investimentos import InvestimentoCreate, InvestimentoUpdate
+from src.schemas.investimentos import TransacaoCreate, InvestimentoUpdate
 from psycopg.rows import dict_row
 import psycopg
 import requests
@@ -131,91 +131,80 @@ def listar_carteira(usuario = Depends(obter_usuario_logado)):
         raise HTTPException(status_code=500, detail="Erro interno no servidor")
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def adicionar_ativo(investimento: InvestimentoCreate, usuario = Depends(obter_usuario_logado)):
+def registrar_transacao(transacao: TransacaoCreate, usuario = Depends(obter_usuario_logado)):
     user_id = extrair_id(usuario)
     try:
         with get_db_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                # 1. Verifica se o ativo já existe na tabela global
-                cur.execute("SELECT id FROM ativos WHERE ticker = %s", (investimento.ticker,))
+                # 1. Busca ou cria o ativo na tabela global (A B3 do nosso sistema)
+                cur.execute("SELECT id FROM ativos WHERE ticker = %s", (transacao.ticker,))
                 ativo = cur.fetchone()
                 
-                # Se não existir, insere na tabela global
                 if not ativo:
                     cur.execute(
                         "INSERT INTO ativos (ticker, categoria) VALUES (%s, %s) RETURNING id",
-                        (investimento.ticker, investimento.categoria)
+                        (transacao.ticker, transacao.categoria)
                     )
                     ativo_id = cur.fetchone()["id"]
                 else:
                     ativo_id = ativo["id"]
 
-                # 2. Verifica se o usuário já tem esse ativo na carteira
-                cur.execute("SELECT id FROM carteira WHERE usuario_id = %s AND ativo_id = %s", (user_id, ativo_id))
-                if cur.fetchone():
-                    raise HTTPException(status_code=400, detail=f"O ativo {investimento.ticker} já está na sua carteira.")
-
-                # 3. Insere a posição do usuário na carteira
+                # 2. Registra a nova nota de corretagem no histórico de Transações
                 cur.execute("""
-                    INSERT INTO carteira (usuario_id, ativo_id, quantidade, preco_medio, percentual_alvo)
-                    VALUES (%s, %s, %s, %s, %s) RETURNING id
-                """, (user_id, ativo_id, investimento.quantidade, investimento.preco_medio, investimento.percentual_alvo))
-                
-                novo_id = cur.fetchone()["id"]
-                conn.commit()
-                return {"mensagem": "Ativo adicionado com sucesso!", "id": novo_id}
-                
-    except HTTPException:
-        raise
-    except psycopg.Error as e:
-        conn.rollback()
-        print(f"Erro ao adicionar ativo: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno ao salvar ativo")
+                    INSERT INTO transacoes (usuario_id, ativo_id, tipo, quantidade, preco_unitario)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (user_id, ativo_id, transacao.tipo, transacao.quantidade, transacao.preco_unitario))
 
-@router.put("/{carteira_id}", status_code=status.HTTP_200_OK)
-def atualizar_ativo(carteira_id: str, investimento: InvestimentoUpdate, usuario = Depends(obter_usuario_logado)):
-    user_id = extrair_id(usuario)
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                # Busca a posição atual para manter os dados que não foram enviados na edição
-                cur.execute("SELECT quantidade, preco_medio, percentual_alvo FROM carteira WHERE id = %s AND usuario_id = %s", (carteira_id, user_id))
-                posicao = cur.fetchone()
-                
-                if not posicao:
-                    raise HTTPException(status_code=404, detail="Posição não encontrada.")
-
-                nova_qtd = investimento.quantidade if investimento.quantidade is not None else posicao["quantidade"]
-                novo_preco = investimento.preco_medio if investimento.preco_medio is not None else posicao["preco_medio"]
-                novo_alvo = investimento.percentual_alvo if investimento.percentual_alvo is not None else posicao["percentual_alvo"]
-
+                # 3. O MOTOR DE PREÇO MÉDIO: Puxa o histórico e calcula a nova posição
                 cur.execute("""
-                    UPDATE carteira 
-                    SET quantidade = %s, preco_medio = %s, percentual_alvo = %s, updated_at = NOW()
-                    WHERE id = %s AND usuario_id = %s
-                """, (nova_qtd, novo_preco, novo_alvo, carteira_id, user_id))
-                
-                conn.commit()
-                return {"mensagem": "Posição atualizada com sucesso!"}
-    except HTTPException:
-        raise
-    except psycopg.Error as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail="Erro ao atualizar ativo.")
+                    SELECT tipo, quantidade, preco_unitario 
+                    FROM transacoes 
+                    WHERE usuario_id = %s AND ativo_id = %s 
+                    ORDER BY data_transacao ASC
+                """, (user_id, ativo_id))
+                historico = cur.fetchall()
 
-@router.delete("/{carteira_id}", status_code=status.HTTP_200_OK)
-def remover_ativo(carteira_id: str, usuario = Depends(obter_usuario_logado)):
-    user_id = extrair_id(usuario)
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM carteira WHERE id = %s AND usuario_id = %s", (carteira_id, user_id))
-                if cur.rowcount == 0:
-                    raise HTTPException(status_code=404, detail="Posição não encontrada.")
+                qtd_total = 0.0
+                pm = 0.0
+
+                for t in historico:
+                    qtd = float(t["quantidade"])
+                    preco = float(t["preco_unitario"])
+                    
+                    if t["tipo"] == "COMPRA":
+                        # Fórmula de PM: (Valor total que já tinha + Valor da nova compra) / Nova Quantidade Total
+                        valor_atual = qtd_total * pm
+                        valor_compra = qtd * preco
+                        qtd_total += qtd
+                        pm = (valor_atual + valor_compra) / qtd_total if qtd_total > 0 else 0
+                        
+                    elif t["tipo"] == "VENDA":
+                        # Venda não altera Preço Médio, apenas diminui a quantidade
+                        qtd_total -= qtd
+                        if qtd_total <= 0:
+                            qtd_total = 0
+                            pm = 0.0 # Zerou a posição
+
+                # 4. Atualiza a "Fotografia" na tabela Carteira usando UPSERT
+                if qtd_total > 0:
+                    cur.execute("""
+                        INSERT INTO carteira (usuario_id, ativo_id, quantidade, preco_medio, percentual_alvo)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (usuario_id, ativo_id) 
+                        DO UPDATE SET 
+                            quantidade = EXCLUDED.quantidade, 
+                            preco_medio = EXCLUDED.preco_medio, 
+                            updated_at = NOW()
+                    """, (user_id, ativo_id, qtd_total, pm, transacao.percentual_alvo))
+                else:
+                    # Se vendeu tudo, remove da tela consolidada da carteira
+                    cur.execute("DELETE FROM carteira WHERE usuario_id = %s AND ativo_id = %s", (user_id, ativo_id))
+
                 conn.commit()
-                return {"mensagem": "Ativo removido da carteira."}
-    except HTTPException:
-        raise
+                return {"mensagem": "Transação registrada e PM recalculado com sucesso!"}
+                
     except psycopg.Error as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail="Erro ao remover ativo.")
+        print(f"Erro ao registrar transação: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno ao calcular PM.")
+
