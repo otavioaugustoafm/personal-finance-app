@@ -30,7 +30,7 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
       const token = localStorage.getItem("token");
       
       // Lembre-se de colocar a sua URL da AWS aqui!
-      await axios.post("fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/investimentos", {
+      await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/investimentos", {
         ticker: ticker.toUpperCase(), // Força o maiúsculo antes de enviar
         categoria,
         quantidade: parseFloat(quantidade.replace(",", ".")),
@@ -49,12 +49,7 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
       onSuccess(); // Avisa a tela principal para recarregar a tabela
       onClose();   // Fecha o modal
     } catch (error: any) {
-      // Pega o erro puro que a AWS enviou e transforma em texto para ler na tela
-      const erroReal = error.response?.data 
-        ? JSON.stringify(error.response.data) 
-        : error.message;
-        
-      setErro(`ERRO TÉCNICO: ${erroReal}`);
+      setErro(error.response?.data?.detail || "Erro ao adicionar ativo. Verifique os dados.");
     } finally {
       setLoading(false);
     }
