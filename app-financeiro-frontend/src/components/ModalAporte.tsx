@@ -49,7 +49,12 @@ export default function ModalAporte({ isOpen, onClose, onSuccess }: ModalAporteP
       onSuccess(); // Avisa a tela principal para recarregar a tabela
       onClose();   // Fecha o modal
     } catch (error: any) {
-      setErro(error.response?.data?.detail || "Erro ao adicionar ativo. Verifique os dados.");
+      // Pega o erro puro que a AWS enviou e transforma em texto para ler na tela
+      const erroReal = error.response?.data 
+        ? JSON.stringify(error.response.data) 
+        : error.message;
+        
+      setErro(`ERRO TÉCNICO: ${erroReal}`);
     } finally {
       setLoading(false);
     }
