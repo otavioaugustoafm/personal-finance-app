@@ -11,4 +11,5 @@ __pycache__/
 
 # Pacotes de Deploy (AWS Lambda)
 *.zip
-backend.zip
+
+pacote/
