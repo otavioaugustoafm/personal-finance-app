@@ -11,6 +11,7 @@ from src.routes import auth
 from src.routes import entradas
 from src.routes import saidas
 from src.routes import resumo
+from src.routes import investimentos
 
 
 app = FastAPI(title="API Financeira Serverless")
@@ -30,6 +31,7 @@ app.include_router(auth.router)
 app.include_router(entradas.router)
 app.include_router(saidas.router)
 app.include_router(resumo.router)
+app.include_router(investimentos.router)
 
 @app.get("/")
 def health_check():
