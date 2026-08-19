@@ -25,6 +25,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
   const [formaPagamento, setFormaPagamento] = useState("PIX");
   const [isReembolsavel, setIsReembolsavel] = useState(false);
   const [quantidadeParcelas, setQuantidadeParcelas] = useState("1");
+  const [regraRecorrencia, setRegraRecorrencia] = useState("DATA_EXATA");
   
   const [categoriasGlobais, setCategoriasGlobais] = useState<Categoria[]>([]);
 
@@ -61,7 +62,8 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
       setPago(despesaParaEditar.pago || false);
       setFormaPagamento(despesaParaEditar.forma_pagamento || "PIX");
       setIsReembolsavel(despesaParaEditar.is_reembolsavel || false);
-      setQuantidadeParcelas("1"); // Edições tratam a parcela individual
+      setRegraRecorrencia(despesaParaEditar.regra_recorrencia || "DATA_EXATA");
+      setQuantidadeParcelas("1"); 
     } else {
       setDescricao("");
       setValor("");
@@ -70,6 +72,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
       setPago(false);
       setFormaPagamento("PIX");
       setIsReembolsavel(false);
+      setRegraRecorrencia("DATA_EXATA");
       setQuantidadeParcelas("1");
     }
   }, [despesaParaEditar, isOpen]);
@@ -88,10 +91,9 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
       pago,
       forma_pagamento: formaPagamento,
       is_reembolsavel: isReembolsavel,
-      regra_recorrencia: "DATA_EXATA",
+      regra_recorrencia: regraRecorrencia, // Agora puxa a regra escolhida na tela!
     };
 
-    // Só manda parcelas se for uma criação nova
     if (!despesaParaEditar) {
       payload.quantidade_parcelas = parseInt(quantidadeParcelas) || 1;
     }
@@ -125,7 +127,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-zinc-400">Descrição</label>
-            <input required type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Tênis de Corrida..." className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
+            <input required type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Conta de Luz..." className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -148,7 +150,7 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
                     <option key={cat.id} value={cat.nome}>{cat.nome}</option>
                   ))
                 ) : (
-                  <option value="">Nenhuma categoria cadastrada</option>
+                  <option value="">Nenhuma cadastrada</option>
                 )}
               </select>
             </div>
@@ -166,20 +168,32 @@ export default function DespesaModal({ isOpen, onClose, onSave, despesaParaEdita
             )}
           </div>
 
-          {/* Campo de Parcelas (Aparece apenas ao criar uma nova Saída) */}
-          {!despesaParaEditar && tipoSaida === "SAIDA" && (
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Quantidade de Parcelas</label>
-              <input 
-                type="number" 
-                min="1" 
-                max="60" 
-                value={quantidadeParcelas} 
-                onChange={(e) => setQuantidadeParcelas(e.target.value)} 
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" 
-              />
+          <div className="grid grid-cols-2 gap-4">
+            {/* NOVO CAMPO: Regra de Recorrência */}
+            <div className={despesaParaEditar || tipoSaida === "ENTRADA" ? "col-span-2" : "col-span-1"}>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Recorrência</label>
+              <select value={regraRecorrencia} onChange={(e) => setRegraRecorrencia(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500">
+                <option value="DATA_EXATA">Lançamento Único</option>
+                <option value="DIA_FIXO">Mensal (Dia Fixo)</option>
+                <option value="ULTIMO_DIA_UTIL">Mensal (Último Dia Útil)</option>
+              </select>
             </div>
-          )}
+
+            {/* Parcelas só aparece se for Saída NOVA */}
+            {!despesaParaEditar && tipoSaida === "SAIDA" && (
+              <div className="col-span-1">
+                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Parcelas</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  max="60" 
+                  value={quantidadeParcelas} 
+                  onChange={(e) => setQuantidadeParcelas(e.target.value)} 
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500" 
+                />
+              </div>
+            )}
+          </div>
 
           <div className="mt-4 flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             <label className="flex cursor-pointer items-center gap-3">
