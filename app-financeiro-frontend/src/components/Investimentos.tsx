@@ -38,7 +38,7 @@ export default function Investimentos() {
     try {
       const token = localStorage.getItem("token");
       // ⚠️ ATENÇÃO: COLOQUE A SUA URL DA AWS AQUI
-      const res = await axios.get("https://SUA_URL_DA_AWS_AQUI/api/v1/investimentos", {
+      const res = await axios.get("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/investimentos", {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDadosCarteira(res.data);
