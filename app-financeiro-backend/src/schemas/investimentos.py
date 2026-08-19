@@ -29,3 +29,6 @@ class InvestimentoResponse(BaseModel):
     percentual_alvo: float
     cotacao_atual: Optional[float] = None
     ultima_atualizacao: Optional[datetime] = None
+
+class MetaUpdate(BaseModel):
+    percentual_alvo: float = Field(..., ge=0, le=100, description="Nova meta percentual na carteira")

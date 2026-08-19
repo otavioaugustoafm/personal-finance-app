@@ -5,7 +5,7 @@ from src.database import get_db_connection
 from src.dependencies import obter_usuario_logado
 
 # AQUI ESTÁ A CORREÇÃO: Puxando apenas o TransacaoCreate
-from src.schemas.investimentos import TransacaoCreate
+from src.schemas.investimentos import TransacaoCreate, MetaUpdate
 from psycopg.rows import dict_row
 import psycopg
 
@@ -76,6 +76,7 @@ def listar_carteira(usuario = Depends(obter_usuario_logado)):
                 cur.execute("""
                     SELECT 
                         c.id as carteira_id, 
+                        c.ativo_id,
                         a.ticker, 
                         a.categoria, 
                         c.quantidade, 
@@ -197,3 +198,87 @@ def registrar_transacao(transacao: TransacaoCreate, usuario = Depends(obter_usua
         conn.rollback()
         print(f"Erro ao registrar transação: {e}")
         raise HTTPException(status_code=500, detail="Erro interno ao calcular PM.")
+
+@router.get("/{ativo_id}/transacoes", status_code=status.HTTP_200_OK)
+def listar_transacoes_ativo(ativo_id: str, usuario = Depends(obter_usuario_logado)):
+    user_id = extrair_id(usuario)
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT id, tipo, quantidade, preco_unitario, data_transacao 
+                FROM transacoes 
+                WHERE usuario_id = %s AND ativo_id = %s
+                ORDER BY data_transacao DESC
+            """, (user_id, ativo_id))
+            return cur.fetchall()
+
+@router.put("/{ativo_id}/meta", status_code=status.HTTP_200_OK)
+def atualizar_meta(ativo_id: str, meta: MetaUpdate, usuario = Depends(obter_usuario_logado)):
+    user_id = extrair_id(usuario)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE carteira SET percentual_alvo = %s, updated_at = NOW()
+                WHERE usuario_id = %s AND ativo_id = %s
+            """, (meta.percentual_alvo, user_id, ativo_id))
+            conn.commit()
+    return {"mensagem": "Meta atualizada com sucesso!"}
+
+@router.delete("/transacoes/{transacao_id}", status_code=status.HTTP_200_OK)
+def deletar_transacao(transacao_id: str, usuario = Depends(obter_usuario_logado)):
+    user_id = extrair_id(usuario)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                # 1. Acha qual é o ativo antes de apagar
+                cur.execute("SELECT ativo_id FROM transacoes WHERE id = %s AND usuario_id = %s", (transacao_id, user_id))
+                transacao = cur.fetchone()
+                if not transacao:
+                    raise HTTPException(status_code=404, detail="Transação não encontrada")
+                    
+                ativo_id = transacao["ativo_id"]
+                
+                # 2. Deleta a transação errada
+                cur.execute("DELETE FROM transacoes WHERE id = %s AND usuario_id = %s", (transacao_id, user_id))
+
+                # 3. RECALCULA O PM DA CARTEIRA
+                cur.execute("""
+                    SELECT tipo, quantidade, preco_unitario 
+                    FROM transacoes 
+                    WHERE usuario_id = %s AND ativo_id = %s 
+                    ORDER BY data_transacao ASC
+                """, (user_id, ativo_id))
+                historico = cur.fetchall()
+
+                qtd_total = 0.0
+                pm = 0.0
+
+                for t in historico:
+                    qtd = float(t["quantidade"])
+                    preco = float(t["preco_unitario"])
+                    if t["tipo"] == "COMPRA":
+                        valor_atual = qtd_total * pm
+                        valor_compra = qtd * preco
+                        qtd_total += qtd
+                        pm = (valor_atual + valor_compra) / qtd_total if qtd_total > 0 else 0
+                    elif t["tipo"] == "VENDA":
+                        qtd_total -= qtd
+                        if qtd_total <= 0:
+                            qtd_total = 0
+                            pm = 0.0 
+
+                # 4. Atualiza a carteira com o novo cenário
+                if qtd_total > 0:
+                    cur.execute("""
+                        UPDATE carteira 
+                        SET quantidade = %s, preco_medio = %s, updated_at = NOW()
+                        WHERE usuario_id = %s AND ativo_id = %s
+                    """, (qtd_total, pm, user_id, ativo_id))
+                else:
+                    cur.execute("DELETE FROM carteira WHERE usuario_id = %s AND ativo_id = %s", (user_id, ativo_id))
+
+                conn.commit()
+                return {"mensagem": "Transação removida e PM recalculado!"}
+    except Exception as e:
+        print(f"Erro ao deletar: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno ao recalcular PM")
