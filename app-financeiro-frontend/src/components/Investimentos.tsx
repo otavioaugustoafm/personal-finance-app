@@ -165,7 +165,7 @@ export default function Investimentos() {
                       <p className="text-xs text-zinc-500 mt-0.5">PM: R$ {parseFloat(ativo.preco_medio).toFixed(2)}</p>
                     </td>
                     <td className="p-4">
-                      <p className="font-medium text-zinc-300">R$ {parseFloat(ativo.cotacao_atual || ativo.preco_medio).toFixed(2)}</p>
+                      <p className="font-medium text-zinc-300">R$ {parseFloat(ativo.cotacao_atual).toFixed(2)}</p>
                     </td>
                     <td className="p-4">
                       <p className="font-bold text-zinc-100">R$ {ativo.saldo_atual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
