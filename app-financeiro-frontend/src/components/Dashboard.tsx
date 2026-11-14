@@ -1,506 +1,211 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  Banknote,
-  CreditCard,
-  Filter,
-  Info,
-  PiggyBank,
-  Undo2,
-  Trash2,
-  Edit2,
-  Plus,
-  LogOut,
-  Tags,
-} from "lucide-react";
-import DespesaModal from "./DespesaModal";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, LogOut, Tags } from "lucide-react";
+import { api } from "../lib/api";
+import { gastosPorCategoria, mapaDeCategorias, resumoDeContas, totaisDoMes } from "../lib/calculos";
+import { intervaloDoMes, nomeDoMes } from "../lib/format";
+import type { Categoria, Conta, StatusSincronizacao, Transacao } from "../lib/types";
+import AvisosSincronizacao from "./AvisosSincronizacao";
 import CategoriasModal from "./CategoriasModal";
-import axios from "axios";
-
-interface ResumoFinanceiro {
-  contas_bancarias: {
-    saldo_atual_em_conta: number;
-    saldo_projetado_fim_do_mes: number;
-  };
-  cartao_de_credito: { 
-    fatura_atual_pendente: number;
-    total_fatura: number;
-  };
-  terceiros: { valores_a_serem_reembolsados: number };
-}
-
-interface Saida {
-  id: string;
-  descricao: string;
-  valor: number;
-  categoria: string;
-  data_vencimento: string;
-  pago: boolean;
-  tipo_saida: string;
-  is_reembolsavel: boolean;
-  forma_pagamento?: string;
-}
-
-interface GastoPorCategoria {
-  categoria: string;
-  total: number;
-}
-
-type StatusFiltro = "todos" | "pago" | "pendente" | "reembolsavel";
-
-const formatarMoeda = (valor: number): string =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor || 0);
-
-const formatarData = (isoDate: string): string => {
-  if (!isoDate) return "";
-  const [ano, mes, dia] = isoDate.split("-");
-  return `${dia}/${mes}/${ano}`;
-};
-
-const MESES = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-];
-
-const CORES_GRAFICO = ["#10B981", "#14B8A6", "#34D399", "#6EE7B7", "#A7F3D0"];
-
-function InfoTooltip({ texto }: { texto: string }) {
-  const [aberto, setAberto] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function aoClicarFora(evento: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(evento.target as Node)) {
-        setAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", aoClicarFora);
-    return () => document.removeEventListener("mousedown", aoClicarFora);
-  }, []);
-
-  return (
-    <div ref={containerRef} className="relative inline-block">
-      <button
-        type="button"
-        aria-label="Mais informações"
-        onMouseEnter={() => setAberto(true)}
-        onMouseLeave={() => setAberto(false)}
-        onClick={() => setAberto((valor) => !valor)}
-        className="flex h-5 w-5 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-amber-400 focus:outline-none"
-      >
-        <Info className="h-3.5 w-3.5" />
-      </button>
-
-      {aberto && (
-        <div role="tooltip" className="absolute right-0 top-7 z-25 w-56 rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-xs leading-relaxed text-zinc-300 shadow-xl">
-          <div className="absolute -top-1 right-1.5 h-2 w-2 rotate-45 border-l border-t border-zinc-700 bg-zinc-800" />
-          {texto}
-        </div>
-      )}
-    </div>
-  );
-}
-
-type EsquemaCor = "verde" | "verdeAgua" | "vermelho" | "ambar";
-const ESQUEMAS_CORES: Record<EsquemaCor, { bgIcone: string; textoIcone: string }> = {
-  verde: { bgIcone: "bg-emerald-950/60", textoIcone: "text-emerald-400" },
-  verdeAgua: { bgIcone: "bg-teal-950/60", textoIcone: "text-teal-400" },
-  vermelho: { bgIcone: "bg-rose-950/60", textoIcone: "text-rose-400" },
-  ambar: { bgIcone: "bg-amber-950/60", textoIcone: "text-amber-400" },
-};
-
-function CardResumo({ titulo, valor, icone, esquemaCor, tooltip, action }: { titulo: string; valor: number; icone: React.ReactNode; esquemaCor: EsquemaCor; tooltip: string; action?: React.ReactNode }) {
-  const cores = ESQUEMAS_CORES[esquemaCor];
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-lg transition-all hover:border-zinc-700">
-      <div className="flex items-start justify-between">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${cores.bgIcone} ${cores.textoIcone}`}>
-          {icone}
-        </div>
-        <div className="flex items-center gap-3">
-          {action}
-          <InfoTooltip texto={tooltip} />
-        </div>
-      </div>
-      <p className="mt-4 text-sm font-medium text-zinc-400">{titulo}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-100">{formatarMoeda(valor)}</p>
-    </div>
-  );
-}
-
-function BadgeStatus({ pago }: { pago: boolean }) {
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${pago ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800/50" : "bg-zinc-800 text-zinc-300 border border-zinc-700"}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${pago ? "bg-emerald-400" : "bg-amber-400"}`} />
-      {pago ? "Pago / Recebido" : "Pendente"}
-    </span>
-  );
-}
-
-function TooltipGrafico({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const item = payload[0];
-  return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm shadow-xl text-zinc-200">
-      <p className="font-medium text-amber-300">{item.payload.categoria}</p>
-      <p className="text-emerald-400">{formatarMoeda(item.value)}</p>
-    </div>
-  );
-}
+import GastosPorCategoria from "./GastosPorCategoria";
+import ListaTransacoes from "./ListaTransacoes";
+import ResumoCards from "./ResumoCards";
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
-export default function Dashboard({ onLogout }: DashboardProps) {
-  const [resumo, setResumo] = useState<ResumoFinanceiro>({
-    contas_bancarias: { saldo_atual_em_conta: 0, saldo_projetado_fim_do_mes: 0 },
-    cartao_de_credito: { fatura_atual_pendente: 0, total_fatura: 0 },
-    terceiros: { valores_a_serem_reembolsados: 0 },
-  });
-  const [saidas, setSaidas] = useState<Saida[]>([]);
-  const [gastosPorCategoria, setGastosPorCategoria] = useState<GastoPorCategoria[]>([]);
+interface Mes {
+  ano: number;
+  mes: number;
+}
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCategoriasModalOpen, setIsCategoriasModalOpen] = useState(false);
-  const [editando, setEditando] = useState<any>(null);
+interface Base {
+  categorias: Categoria[];
+  contas: Conta[];
+  status: StatusSincronizacao;
+  desatualizado: boolean;
+}
 
+const LOTE_MAXIMO = 500; // limite do endpoint de categorizacao em lote
+const HORAS_ATE_DESATUALIZAR = 36;
+
+function mesAtual(): Mes {
   const hoje = new Date();
-  const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth());
-  const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>("todas");
-  const [statusSelecionado, setStatusSelecionado] = useState<StatusFiltro>("todos");
-  const [formaPagamentoSelecionada, setFormaPagamentoSelecionada] = useState<string>("todas"); 
+  return { ano: hoje.getFullYear(), mes: hoje.getMonth() + 1 };
+}
 
-  const [listaCategorias, setListaCategorias] = useState<string[]>([]);
+export default function Dashboard({ onLogout }: DashboardProps) {
+  const [periodo, setPeriodo] = useState<Mes>(mesAtual);
+  const [versaoBase, setVersaoBase] = useState(0);
+  const [base, setBase] = useState<(Base & { versao: number }) | null>(null);
+  const [versaoTransacoes, setVersaoTransacoes] = useState(0);
+  const [dadosTransacoes, setDadosTransacoes] = useState<{ chave: string; transacoes: Transacao[] } | null>(null);
+  const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const [modalCategorias, setModalCategorias] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
-  const carregarDadosReais = async () => {
-    try {
-      const token = localStorage.getItem("token") || "";
-      const headers = { Authorization: `Bearer ${token}` };
-      const mesNum = mesSelecionado + 1;
+  const chave = `${periodo.ano}-${periodo.mes}-${versaoTransacoes}`;
 
-      const [resResumo, resSaidas, resGrafico, resCategorias] = await Promise.all([
-        axios.get(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/resumo?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: resumo })),
-        axios.get(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: { saidas: [] } })),
-        axios.get(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/grafico/categorias?ano=${anoSelecionado}&mes=${mesNum}`, { headers }).catch(() => ({ data: [] })),
-        axios.get("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias", { headers }).catch(() => ({ data: { categorias: [] } })),
-      ]);
-
-      setResumo(resResumo.data);
-      setSaidas(resSaidas.data.saidas || []);
-      setGastosPorCategoria(resGrafico.data || []);
-      
-      const nomesCats = (resCategorias.data.categorias || []).map((c: any) => c.nome);
-      setListaCategorias(nomesCats);
-    } catch (error) {
-      console.error("Erro ao buscar dados do backend:", error);
-    }
-  };
-
+  // Categorias, contas e status da sincronizacao (recarrega depois de editar categorias)
   useEffect(() => {
-    carregarDadosReais();
-  }, [mesSelecionado, anoSelecionado]);
+    let ativo = true;
+    Promise.all([api.get("/api/v1/categorias"), api.get("/api/v1/contas"), api.get("/api/v1/sincronizacao/status")])
+      .then(([cat, contas, status]) => {
+        if (!ativo) return;
+        const st = status.data as StatusSincronizacao;
+        const fim = st.ultima?.finalizada_em;
+        setBase({
+          versao: versaoBase,
+          categorias: cat.data.categorias,
+          contas: contas.data.contas,
+          status: st,
+          desatualizado: !!fim && Date.now() - new Date(fim).getTime() > HORAS_ATE_DESATUALIZAR * 3600 * 1000,
+        });
+      })
+      .catch(() => ativo && setErro("Não foi possível carregar os dados. Verifique se o backend está no ar."));
+    return () => {
+      ativo = false;
+    };
+  }, [versaoBase]);
 
-  const categoriasDisponiveis = useMemo(() => {
-    return listaCategorias;
-  }, [listaCategorias]);
+  // Transacoes do mes escolhido
+  useEffect(() => {
+    let ativo = true;
+    const { de, ate } = intervaloDoMes(periodo.ano, periodo.mes);
+    api
+      .get("/api/v1/transacoes", { params: { de, ate, incluir_ignoradas: true, limite: 1000 } })
+      .then((res) => ativo && setDadosTransacoes({ chave, transacoes: res.data.transacoes }))
+      .catch(() => ativo && setErro("Não foi possível carregar as transações."));
+    return () => {
+      ativo = false;
+    };
+  }, [chave, periodo]);
 
-  const saidasFiltradas = useMemo(() => {
-    return saidas.filter((saida) => {
-      const combinaCategoria = categoriaSelecionada === "todas" || saida.categoria === categoriaSelecionada;
-      
-      const combinaStatus =
-        statusSelecionado === "todos" ||
-        (statusSelecionado === "pago" && saida.pago) ||
-        (statusSelecionado === "pendente" && !saida.pago) ||
-        (statusSelecionado === "reembolsavel" && saida.is_reembolsavel);
-        
-      const combinaForma = 
-        formaPagamentoSelecionada === "todas" || 
-        (saida.forma_pagamento && saida.forma_pagamento.toUpperCase() === formaPagamentoSelecionada.toUpperCase());
-        
-      return combinaCategoria && combinaStatus && combinaForma;
+  const carregando = dadosTransacoes?.chave !== chave;
+  const transacoes = useMemo(() => (carregando ? [] : (dadosTransacoes?.transacoes ?? [])), [carregando, dadosTransacoes]);
+  const mapa = useMemo(() => mapaDeCategorias(base?.categorias ?? []), [base?.categorias]);
+  const totais = useMemo(() => totaisDoMes(transacoes), [transacoes]);
+  const gastos = useMemo(() => gastosPorCategoria(transacoes, mapa), [transacoes, mapa]);
+  const contas = useMemo(() => resumoDeContas(base?.contas ?? []), [base?.contas]);
+
+  const mudarMes = (delta: number) => {
+    setCategoriaFiltro(null);
+    setPeriodo(({ ano, mes }) => {
+      const d = new Date(ano, mes - 1 + delta, 1);
+      return { ano: d.getFullYear(), mes: d.getMonth() + 1 };
     });
-  }, [saidas, categoriaSelecionada, statusSelecionado, formaPagamentoSelecionada]);
+  };
 
-  const totalDespesasFiltradas = useMemo(
-    () => saidasFiltradas.reduce((soma, saida) => {
-      return saida.tipo_saida !== "ENTRADA" ? soma + saida.valor : soma;
-    }, 0),
-    [saidasFiltradas]
-  );
+  // Atualiza a tela na hora e confirma no servidor; se falhar, desfaz.
+  const atualizarLocalmente = (ids: string[], mudanca: Partial<Transacao>) =>
+    setDadosTransacoes((atual) =>
+      atual && { ...atual, transacoes: atual.transacoes.map((t) => (ids.includes(t.id) ? { ...t, ...mudanca } : t)) },
+    );
 
-  const totalReceitasFiltradas = useMemo(
-    () => saidasFiltradas.reduce((soma, saida) => {
-      return saida.tipo_saida === "ENTRADA" ? soma + saida.valor : soma;
-    }, 0),
-    [saidasFiltradas]
-  );
+  const desfazer = (mensagem: string) => {
+    setErro(mensagem);
+    setVersaoTransacoes((v) => v + 1); // rebusca o estado real
+  };
 
-  const handleSalvar = async (dados: any) => {
+  const categorizar = async (ids: string[], categoriaId: string | null) => {
+    atualizarLocalmente(ids, { categoria_id: categoriaId });
     try {
-      const token = localStorage.getItem("token") || "";
-      const headers = { Authorization: `Bearer ${token}` };
-
-      if (editando) {
-        await axios.put(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/${editando.id}`, dados, { headers });
+      if (ids.length === 1) {
+        await api.patch(`/api/v1/transacoes/${ids[0]}`, { categoria_id: categoriaId });
       } else {
-        await axios.post("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas", {
-          ...dados,
-          data_vencimento: dados.data_vencimento || new Date().toISOString().split('T')[0]
-        }, { headers });
+        for (let i = 0; i < ids.length; i += LOTE_MAXIMO) {
+          await api.post("/api/v1/transacoes/categorizar-em-lote", { ids: ids.slice(i, i + LOTE_MAXIMO), categoria_id: categoriaId });
+        }
       }
-      setIsModalOpen(false);
-      setEditando(null);
-      carregarDadosReais();
-    } catch (error) {
-      console.error("Erro ao salvar:", error);
-      alert("Erro ao salvar lançamento.");
+    } catch {
+      desfazer("Não foi possível salvar a categoria. Tente novamente.");
     }
   };
 
-  const handleDeletar = async (id: string) => {
-    if (confirm("Tem certeza que deseja excluir este lançamento?")) {
-      try {
-        const token = localStorage.getItem("token") || "";
-        await axios.delete(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        carregarDadosReais();
-      } catch (error) {
-        console.error("Erro ao deletar:", error);
-        alert("Erro ao excluir lançamento.");
-      }
-    }
-  };
-
-  const handlePagarFatura = async () => {
-    if (confirm(`Tem certeza que deseja pagar a fatura de ${MESES[mesSelecionado]}? Isso vai dar baixa em todos os gastos de crédito pendentes neste mês.`)) {
-      try {
-        const token = localStorage.getItem("token") || "";
-        const mesNum = mesSelecionado + 1;
-        
-        await axios.post(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/saidas/pagar-fatura?ano=${anoSelecionado}&mes=${mesNum}`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        carregarDadosReais();
-      } catch (error) {
-        console.error("Erro ao pagar fatura:", error);
-        alert("Erro ao pagar fatura.");
-      }
+  const ignorar = async (id: string, ignorarNoFluxo: boolean) => {
+    atualizarLocalmente([id], { ignorar_no_fluxo: ignorarNoFluxo });
+    try {
+      await api.patch(`/api/v1/transacoes/${id}`, { ignorar_no_fluxo: ignorarNoFluxo });
+    } catch {
+      desfazer("Não foi possível salvar a alteração. Tente novamente.");
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Visão geral financeira</h1>
-            <p className="mt-1 text-sm text-amber-400/90 font-medium">{MESES[mesSelecionado]} de {anoSelecionado}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
+    <div className="min-h-screen bg-zinc-950 px-4 py-6 text-zinc-100 sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-6xl space-y-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-lg font-semibold tracking-tight">Controle Financeiro</h1>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900">
+              <button onClick={() => mudarMes(-1)} aria-label="Mês anterior" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-36 text-center text-sm font-medium capitalize">{nomeDoMes(periodo.ano, periodo.mes)}</span>
+              <button onClick={() => mudarMes(1)} aria-label="Próximo mês" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
             <button
-              onClick={() => setIsCategoriasModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-amber-400"
+              onClick={() => setModalCategorias(true)}
+              className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
             >
-              <Tags className="h-4 w-4 text-emerald-400" /> Categorias
+              <Tags className="h-4 w-4" /> <span className="hidden sm:inline">Categorias</span>
             </button>
-
-            <button
-              onClick={() => { setEditando(null); setIsModalOpen(true); }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-500"
-            >
-              <Plus className="h-4 w-4" /> Novo Lançamento
-            </button>
-            
             <button
               onClick={onLogout}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-rose-400"
-              title="Sair da conta"
+              className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
             >
-              <LogOut className="h-4 w-4 text-zinc-400" /> Sair
+              <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sair</span>
             </button>
           </div>
         </header>
 
-        {/* CARDS DE RESUMO */}
-        <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <CardResumo titulo="Saldo atual" valor={resumo.contas_bancarias.saldo_atual_em_conta} icone={<Banknote className="h-5 w-5" />} esquemaCor="verde" tooltip="Saldo disponível em conta hoje (Entradas recebidas - Gastos e Faturas pagas)." />
-          <CardResumo titulo="Saldo projetado" valor={resumo.contas_bancarias.saldo_projetado_fim_do_mes} icone={<PiggyBank className="h-5 w-5" />} esquemaCor="verdeAgua" tooltip="O que vai sobrar livre na conta ao fim do mês, após quitar a fatura e receber o que falta." />
-          
-          <CardResumo 
-            titulo="Fatura do mês" 
-            valor={resumo.cartao_de_credito.total_fatura} 
-            icone={<CreditCard className="h-5 w-5" />} 
-            esquemaCor="vermelho" 
-            tooltip={`Total de gastos no crédito. Pendente para pagar: ${formatarMoeda(resumo.cartao_de_credito.fatura_atual_pendente)}`} 
-            action={
-              resumo.cartao_de_credito.fatura_atual_pendente > 0 ? (
-                <button 
-                  onClick={handlePagarFatura} 
-                  className="rounded border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold tracking-wide text-rose-400 transition-colors hover:bg-rose-500/20"
-                >
-                  PAGAR FATURA
-                </button>
-              ) : resumo.cartao_de_credito.total_fatura > 0 ? (
-                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold tracking-wide text-emerald-400">
-                  PAGA
-                </span>
-              ) : null
-            }
-          />
-          
-          <CardResumo titulo="A receber" valor={resumo.terceiros.valores_a_serem_reembolsados} icone={<Undo2 className="h-5 w-5" />} esquemaCor="ambar" tooltip="Valores marcados como reembolsáveis no mês." />
-        </section>
-
-        {/* GRÁFICO + FILTROS */}
-        <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-10">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-lg lg:col-span-7">
-            <h2 className="mb-4 text-sm font-semibold text-zinc-200">Gastos por categoria</h2>
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={gastosPorCategoria} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="#27272a" />
-                  <XAxis dataKey="categoria" tick={{ fill: "#a1a1aa", fontSize: 12 }} axisLine={{ stroke: "#3f3f46" }} tickLine={false} />
-                  <YAxis tick={{ fill: "#a1a1aa", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} />
-                  <RechartsTooltip content={<TooltipGrafico />} cursor={{ fill: "#18181b" }} />
-                  <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                    {gastosPorCategoria.map((_, index) => (
-                      <Cell key={index} fill={CORES_GRAFICO[index % CORES_GRAFICO.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+        {erro && (
+          <div className="flex items-center justify-between rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+            {erro}
+            <button onClick={() => setErro(null)} className="ml-3 text-rose-400 hover:text-rose-200">Fechar</button>
           </div>
+        )}
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-lg lg:col-span-3">
-            <div className="mb-4 flex items-center gap-2">
-              <Filter className="h-4 w-4 text-amber-400" />
-              <h2 className="text-sm font-semibold text-zinc-200">Filtros</h2>
-            </div>
-            <div className="space-y-5">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Período</label>
-                <div className="flex gap-2">
-                  <select value={mesSelecionado} onChange={(e) => setMesSelecionado(Number(e.target.value))} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none">
-                    {MESES.map((mes, idx) => <option key={mes} value={idx}>{mes}</option>)}
-                  </select>
-                  <select value={anoSelecionado} onChange={(e) => setAnoSelecionado(Number(e.target.value))} className="w-28 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none">
-                    {[anoSelecionado - 1, anoSelecionado, anoSelecionado + 1].map((ano) => <option key={ano} value={ano}>{ano}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Categoria</label>
-                <select value={categoriaSelecionada} onChange={(e) => setCategoriaSelecionada(e.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none">
-                  <option value="todas">Todas as categorias</option>
-                  {categoriasDisponiveis.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-              
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Tipo de Gasto</label>
-                <select 
-                  value={formaPagamentoSelecionada} 
-                  onChange={(e) => setFormaPagamentoSelecionada(e.target.value)} 
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
-                >
-                  <option value="todas">Todos os tipos</option>
-                  <option value="CREDITO">Cartão de Crédito</option>
-                  <option value="DEBITO">Cartão de Débito</option>
-                  <option value="PIX">PIX</option>
-                  <option value="DINHEIRO">Dinheiro</option>
-                </select>
-              </div>
+        {base && <AvisosSincronizacao status={base.status} desatualizado={base.desatualizado} />}
 
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Status</label>
-                <div className="flex flex-col gap-2">
-                  {(["todos", "pago", "pendente", "reembolsavel"] as StatusFiltro[]).map((status) => (
-                    <label key={status} className="flex cursor-pointer items-center gap-2 text-sm text-zinc-300">
-                      <input 
-                        type="radio" 
-                        name="status" 
-                        value={status} 
-                        checked={statusSelecionado === status} 
-                        onChange={() => setStatusSelecionado(status)} 
-                        className="h-3.5 w-3.5 accent-emerald-500" 
-                      />
-                      {status === "reembolsavel" ? "A receber" : status.charAt(0).toUpperCase() + status.slice(1)}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
+        <ResumoCards
+          saldoEmConta={contas.saldoEmConta}
+          cartaoEmAberto={contas.cartaoEmAberto}
+          temContas={contas.temContas}
+          entradas={totais.entradas}
+          saidas={totais.saidas}
+        />
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-1">
+            <GastosPorCategoria gastos={gastos} selecionada={categoriaFiltro} onSelecionar={setCategoriaFiltro} />
           </div>
-        </section>
-
-        {/* LISTA DE LANÇAMENTOS */}
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900 shadow-lg">
-          <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-            <h2 className="text-sm font-semibold text-zinc-200">Lançamentos do mês</h2>
-            
-            <div className="flex gap-4 text-sm text-zinc-400">
-               <p>Receitas: <span className="font-semibold text-emerald-400">{formatarMoeda(totalReceitasFiltradas)}</span></p>
-               <p>Despesas: <span className="font-semibold text-rose-400">{formatarMoeda(totalDespesasFiltradas)}</span></p>
-            </div>
+          <div className="lg:col-span-2">
+            <ListaTransacoes
+              key={chave.split("-").slice(0, 2).join("-")} // reinicia filtros e selecao ao trocar de mes
+              transacoes={transacoes}
+              categorias={base?.categorias ?? []}
+              mapaCategorias={mapa}
+              categoriaFiltro={categoriaFiltro}
+              onLimparCategoriaFiltro={() => setCategoriaFiltro(null)}
+              carregando={carregando}
+              onCategorizar={categorizar}
+              onIgnorar={ignorar}
+            />
           </div>
-          <div className="hidden grid-cols-12 gap-4 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-500 sm:grid">
-            <span className="col-span-3">Descrição</span>
-            <span className="col-span-3">Categoria</span>
-            <span className="col-span-2">Vencimento</span>
-            <span className="col-span-2 text-right">Valor</span>
-            <span className="col-span-1 text-center">Status</span>
-            <span className="col-span-1 text-right">Ações</span>
-          </div>
-          <ul className="divide-y divide-zinc-800/60">
-            {saidasFiltradas.map((saida) => {
-              const isEntrada = saida.tipo_saida === "ENTRADA";
-              return (
-                <li key={saida.id} className="grid grid-cols-2 items-center gap-2 px-5 py-4 sm:grid-cols-12 sm:gap-4 hover:bg-zinc-800/30 transition-colors">
-                  <span className="col-span-2 text-sm font-medium text-zinc-200 sm:col-span-3 flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${isEntrada ? 'bg-emerald-400' : 'bg-rose-500'}`} />
-                    {saida.descricao}
-                  </span>
-                  <span className="col-span-1 text-sm text-zinc-400 sm:col-span-3">
-                    <span className="inline-flex rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300 border border-zinc-700">{saida.categoria}</span>
-                  </span>
-                  <span className="col-span-1 text-sm text-zinc-400 sm:col-span-2">{formatarData(saida.data_vencimento)}</span>
-                  
-                  <span className={`col-span-1 text-right text-sm font-semibold sm:col-span-2 ${isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {isEntrada ? `+ ${formatarMoeda(saida.valor)}` : `- ${formatarMoeda(saida.valor)}`}
-                  </span>
-
-                  <span className="col-span-1 flex justify-center sm:col-span-1"><BadgeStatus pago={saida.pago} /></span>
-                  <span className="col-span-2 flex items-center justify-end gap-2 sm:col-span-1">
-                    <button onClick={() => { setEditando(saida); setIsModalOpen(true); }} className="p-1 text-zinc-400 hover:text-amber-300 transition-colors" title="Editar"><Edit2 className="h-4 w-4" /></button>
-                    <button onClick={() => handleDeletar(saida.id)} className="p-1 text-zinc-400 hover:text-rose-400 transition-colors" title="Excluir"><Trash2 className="h-4 w-4" /></button>
-                  </span>
-                </li>
-              );
-            })}
-            {saidasFiltradas.length === 0 && (
-              <li className="px-5 py-10 text-center text-sm text-zinc-500">Nenhum lançamento encontrado.</li>
-            )}
-          </ul>
-        </section>
+        </div>
       </div>
 
-      <DespesaModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditando(null); }} onSave={handleSalvar} despesaParaEditar={editando} />
-      <CategoriasModal isOpen={isCategoriasModalOpen} onClose={() => setIsCategoriasModalOpen(false)} />
+      <CategoriasModal
+        isOpen={modalCategorias}
+        onClose={() => {
+          setModalCategorias(false);
+          setVersaoBase((v) => v + 1); // recarrega as categorias (nomes, cores, novas, excluidas)
+          setVersaoTransacoes((v) => v + 1); // transacoes de categoria excluida ficam sem categoria
+        }}
+      />
     </div>
   );
 }

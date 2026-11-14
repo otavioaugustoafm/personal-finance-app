@@ -1,31 +1,33 @@
 from datetime import datetime, timedelta, timezone
+
 import bcrypt
 import jwt
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
+from src.config import APP_PASSWORD_HASH, JWT_ALGORITHM, JWT_SECRET_KEY
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "chave_padrao_insegura")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_SECONDS = 3600  # 1 hora
+# O Brasil nao tem horario de verao desde 2019, entao um offset fixo de UTC-3 basta
+# e evita depender de banco de fusos horarios dentro da Lambda.
+FUSO_BRASILIA = timezone(timedelta(hours=-3))
 
-def verificar_senha(senha_texto_plano: str, senha_hash: str) -> bool:
-    """Compara a senha enviada com o hash do banco usando bcrypt."""
-    senha_bytes = senha_texto_plano.encode("utf-8")
-    hash_bytes = senha_hash.encode("utf-8")
+
+def verificar_senha(senha: str) -> bool:
     try:
-        return bcrypt.checkpw(senha_bytes, hash_bytes)
+        return bcrypt.checkpw(senha.encode("utf-8"), APP_PASSWORD_HASH.encode("utf-8"))
     except ValueError:
         return False
 
-def criar_token_acesso(usuario_id: str) -> str:
-    """Gera um token JWT assinado contendo o ID do usuário (sub)."""
+
+def proxima_segunda_meia_noite(agora: datetime | None = None) -> datetime:
+    """Proxima segunda-feira, 00:00 (Brasilia), estritamente depois de 'agora'."""
+    agora = (agora or datetime.now(FUSO_BRASILIA)).astimezone(FUSO_BRASILIA)
+    dias = (7 - agora.weekday()) % 7 or 7  # segunda = 0
+    alvo = agora + timedelta(days=dias)
+    return alvo.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def criar_token_acesso() -> tuple[str, datetime]:
+    """Token sem relacao com usuario: so prova que a senha de acesso foi informada."""
     agora = datetime.now(timezone.utc)
-    expiracao = agora + timedelta(seconds=JWT_EXPIRATION_SECONDS)
-    payload = {
-        "sub": usuario_id,
-        "iat": agora,
-        "exp": expiracao,
-    }
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    expira = proxima_segunda_meia_noite()
+    payload = {"sub": "acesso", "iat": agora, "exp": expira}
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM), expira

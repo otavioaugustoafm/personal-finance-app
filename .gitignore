@@ -1,15 +1,22 @@
-# Ambientes Virtuais
+# Segredos: NUNCA commitar
+.env
+.env.*
+!.env.example
+
+# Ambientes virtuais
+.venv/
 venv/
 env/
 
-# Arquivos compilados do Python
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
-# Arquivos de ambiente e senhas
-.env
-
-# Pacotes de Deploy (AWS Lambda)
+# Pacote da Lambda (gerado por scripts/montar_zip_lambda.py)
+build/
 *.zip
 
-pacote/
+# Frontend
+node_modules/
+dist/

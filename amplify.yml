@@ -1,0 +1,22 @@
+version: 1
+applications:
+  - appRoot: app-financeiro-frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # O Vite 8 exige Node 20.19+ ou 22.12+; fixamos o 22 para o build nao depender do padrao da imagem
+            - nvm install 22
+            - nvm use 22
+            - node --version
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*

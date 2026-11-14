@@ -1,0 +1,8 @@
+# Dependencias que vao DENTRO do zip da Lambda (sem uvicorn, que so serve para rodar local)
+fastapi==0.110.0
+mangum==0.17.0
+psycopg[binary]==3.3.4
+PyJWT==2.8.0
+bcrypt==4.1.2
+python-dotenv==1.0.1
+requests==2.32.5

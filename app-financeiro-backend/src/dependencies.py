@@ -1,39 +1,19 @@
-from fastapi import HTTPException, status, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
-import os
-from dotenv import load_dotenv
+from fastapi import HTTPException, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-load_dotenv()
+from src.config import JWT_ALGORITHM, JWT_SECRET_KEY
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "chave_padrao_insegura")
-JWT_ALGORITHM = "HS256"
+_esquema = HTTPBearer(auto_error=False)
 
-security_scheme = HTTPBearer()
 
-def obter_usuario_logado(credentials: HTTPAuthorizationCredentials = Security(security_scheme)) -> str:
-    """
-    Valida automaticamente o token JWT enviado via header Authorization: Bearer <token>
-    através do esquema oficial do FastAPI.
-    """
-    token = credentials.credentials
-
+def exigir_acesso(credenciais: HTTPAuthorizationCredentials | None = Security(_esquema)) -> None:
+    """Dependencia de rota: bloqueia quem nao tiver um token valido e nao expirado."""
+    if credenciais is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Acesso nao autenticado.")
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        usuario_id: str = payload.get("sub")
-        if usuario_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"codigo": "TOKEN_INVALIDO", "mensagem": "Token não contém o identificador do usuário."}
-            )
-        return usuario_id
+        jwt.decode(credenciais.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"codigo": "TOKEN_EXPIRADO", "mensagem": "O token JWT expirou. Faça login novamente."}
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Sessao expirada. Entre novamente.")
     except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"codigo": "TOKEN_INVALIDO", "mensagem": "Token JWT inválido ou corrompido."}
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Token invalido.")

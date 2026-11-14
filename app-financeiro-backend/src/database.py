@@ -1,18 +1,12 @@
-import os
 import psycopg
-from dotenv import load_dotenv
 
-# Carrega as variáveis do arquivo .env para a memória do sistema
-load_dotenv()
+from src.config import DATABASE_URL
 
-# Busca a URL do banco. Se não encontrar, barra a execução por segurança
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("Alerta de Infraestrutura: DATABASE_URL não encontrada no arquivo .env.")
 
-def get_db_connection():
+def get_db_connection() -> psycopg.Connection:
+    """Abre uma conexao com o Neon. Use como context manager (with ... as conn).
+
+    prepare_threshold=None desliga os "prepared statements" automaticos do psycopg: o endereco "pooled" do Neon
+    (PgBouncer) pode trocar a conexao real entre comandos, e statements preparados quebrariam de forma intermitente.
     """
-    Abre e retorna uma conexão com o banco de dados.
-    O uso do 'psycopg' v3 garante alta performance.
-    """
-    return psycopg.connect(DATABASE_URL)
+    return psycopg.connect(DATABASE_URL, prepare_threshold=None, connect_timeout=15)

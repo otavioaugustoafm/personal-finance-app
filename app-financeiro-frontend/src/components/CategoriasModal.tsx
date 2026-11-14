@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { X, Trash2, Plus } from "lucide-react";
-import axios from "axios";
+import { api } from "../lib/api";
 
 interface Categoria {
   id: string;
   nome: string;
   tipo: string;
+  cor: string | null;
 }
 
 interface CategoriasModalProps {
@@ -14,17 +15,20 @@ interface CategoriasModalProps {
 }
 
 export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProps) {
+  // O conteudo monta so quando abre, entao o estado (lista e campo de texto) sempre comeca limpo.
+  return isOpen ? <CategoriasConteudo onClose={onClose} /> : null;
+}
+
+function CategoriasConteudo({ onClose }: { onClose: () => void }) {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [novaCategoria, setNovaCategoria] = useState("");
   const [tipoNovaCategoria, setTipoNovaCategoria] = useState("SAIDA");
+  const [corNovaCategoria, setCorNovaCategoria] = useState("#10b981");
   const [isLoading, setIsLoading] = useState(false);
 
   const carregarCategorias = async () => {
     try {
-      const token = localStorage.getItem("token") || "";
-      const res = await axios.get("https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get("/api/v1/categorias");
       setCategorias(res.data.categorias || []);
     } catch (error) {
       console.error("Erro ao carregar categorias", error);
@@ -32,11 +36,15 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
   };
 
   useEffect(() => {
-    if (isOpen) {
-      carregarCategorias();
-      setNovaCategoria("");
-    }
-  }, [isOpen]);
+    let ativo = true;
+    api
+      .get("/api/v1/categorias")
+      .then((res) => ativo && setCategorias(res.data.categorias || []))
+      .catch((error) => console.error("Erro ao carregar categorias", error));
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const handleCriar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,12 +52,7 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
 
     setIsLoading(true);
     try {
-      const token = localStorage.getItem("token") || "";
-      await axios.post(
-        "https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias",
-        { nome: novaCategoria.trim(), tipo: tipoNovaCategoria },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post("/api/v1/categorias", { nome: novaCategoria.trim(), tipo: tipoNovaCategoria, cor: corNovaCategoria });
       setNovaCategoria("");
       carregarCategorias();
     } catch (error) {
@@ -61,12 +64,9 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
   };
 
   const handleDeletar = async (id: string) => {
-    if (confirm("Tem certeza que deseja excluir esta categoria? Lançamentos atrelados a ela podem perder a referência.")) {
+    if (confirm("Tem certeza que deseja excluir esta categoria? Transações dessa categoria ficarão sem categoria.")) {
       try {
-        const token = localStorage.getItem("token") || "";
-        await axios.delete(`https://fqdj9kncvf.execute-api.us-east-2.amazonaws.com/api/v1/categorias/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.delete(`/api/v1/categorias/${id}`);
         carregarCategorias();
       } catch (error) {
         console.error("Erro ao deletar categoria", error);
@@ -74,8 +74,6 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
       }
     }
   };
-
-  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -103,6 +101,13 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
           </div>
 
           <form onSubmit={handleCriar} className="flex gap-2">
+            <input
+              type="color"
+              value={corNovaCategoria}
+              onChange={(e) => setCorNovaCategoria(e.target.value)}
+              aria-label="Cor da categoria"
+              className="h-10 w-10 shrink-0 cursor-pointer rounded-xl border border-zinc-700 bg-zinc-950 p-1"
+            />
             <input 
               type="text" 
               value={novaCategoria} 
@@ -128,6 +133,7 @@ export default function CategoriasModal({ isOpen, onClose }: CategoriasModalProp
             categorias.map((cat) => (
               <div key={cat.id} className="flex items-center justify-between rounded-xl border border-zinc-800/60 bg-zinc-800/30 p-3 hover:bg-zinc-800/50 transition-colors">
                 <div className="flex items-center gap-3">
+                  <span className="h-3 w-3 shrink-0 rounded-full bg-zinc-600" style={cat.cor ? { backgroundColor: cat.cor } : undefined} />
                   <span className="text-sm font-medium text-zinc-200">{cat.nome}</span>
                   <span className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
                     cat.tipo === "SAIDA" 

@@ -1,57 +1,32 @@
-from fastapi import FastAPI, HTTPException
-from mangum import Mangum
-from src.database import get_db_connection
-import psycopg
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 
-# Importando o módulo de rotas que acabamos de criar
-from src.routes import categorias
-from src.routes import usuarios  
-from src.routes import auth
-from src.routes import entradas
-from src.routes import saidas
-from src.routes import resumo
-from src.routes import investimentos
+from src.config import ALLOWED_ORIGINS, validar_config_api
+from src.routes import auth, categorias, contas, sincronizacao, transacoes
 
+validar_config_api()
 
-app = FastAPI(title="API Financeira Serverless")
+app = FastAPI(title="API Financeira")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permite o React (localhost:5173) falar com a API
-    allow_credentials=True,
-    allow_methods=["*"], # Permite POST, GET, OPTIONS, DELETE, PUT
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
-# Acoplando as rotas de categorias na aplicação principal
-app.include_router(categorias.router)
-app.include_router(usuarios.router)
 app.include_router(auth.router)
-app.include_router(entradas.router)
-app.include_router(saidas.router)
-app.include_router(resumo.router)
-app.include_router(investimentos.router)
+app.include_router(categorias.router)
+app.include_router(contas.router)
+app.include_router(transacoes.router)
+app.include_router(sincronizacao.router)
+
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "mensagem": "API rodando e protegida!"}
+    return {"status": "ok"}
 
-@app.get("/api/v1/testar-banco")
-def testar_conexao():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT now();")
-                tempo_banco = cur.fetchone()[0]
-                
-        return {
-            "status": "sucesso", 
-            "mensagem": "Comunicação com o Neon estabelecida!",
-            "horario_do_servidor": tempo_banco
-        }
-    except psycopg.Error as erro:
-        print(f"Falha técnica: {erro}")
-        raise HTTPException(status_code=500, detail="Erro interno ao conectar no banco de dados.")
 
+# Ponto de entrada da AWS Lambda
 handler = Mangum(app)
