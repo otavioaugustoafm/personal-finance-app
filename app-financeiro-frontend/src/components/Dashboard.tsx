@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, LogOut, Tags } from "lucide-react";
-import { api } from "../lib/api";
-import { gastosPorCategoria, mapaDeCategorias, resumoDeContas, totaisDoMes } from "../lib/calculos";
+import { api, mensagemDeErro } from "../lib/api";
+import {
+  FILTROS_VAZIOS, SEM_CATEGORIA, contarFiltrosAtivos, filtrarTransacoes, gastosPorCategoria, mapaDeCategorias,
+  resumoDeContas, totaisDoMes, type Filtros,
+} from "../lib/calculos";
 import { intervaloDoMes, nomeDoMes } from "../lib/format";
-import type { Categoria, Conta, StatusSincronizacao, Transacao } from "../lib/types";
+import type { Categoria, Conta, Direcao, StatusSincronizacao, Transacao } from "../lib/types";
 import AvisosSincronizacao from "./AvisosSincronizacao";
 import CategoriasModal from "./CategoriasModal";
+import EditarTransacaoModal from "./EditarTransacaoModal";
+import FiltrosTransacoes from "./FiltrosTransacoes";
 import GastosPorCategoria from "./GastosPorCategoria";
 import ListaTransacoes from "./ListaTransacoes";
 import ResumoCards from "./ResumoCards";
@@ -40,7 +45,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [base, setBase] = useState<(Base & { versao: number }) | null>(null);
   const [versaoTransacoes, setVersaoTransacoes] = useState(0);
   const [dadosTransacoes, setDadosTransacoes] = useState<{ chave: string; transacoes: Transacao[] } | null>(null);
-  const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
+  const [tipoGrafico, setTipoGrafico] = useState<Direcao>("SAIDA");
+  const [editando, setEditando] = useState<Transacao | null>(null);
   const [modalCategorias, setModalCategorias] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -84,12 +91,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const carregando = dadosTransacoes?.chave !== chave;
   const transacoes = useMemo(() => (carregando ? [] : (dadosTransacoes?.transacoes ?? [])), [carregando, dadosTransacoes]);
   const mapa = useMemo(() => mapaDeCategorias(base?.categorias ?? []), [base?.categorias]);
-  const totais = useMemo(() => totaisDoMes(transacoes), [transacoes]);
-  const gastos = useMemo(() => gastosPorCategoria(transacoes, mapa), [transacoes, mapa]);
+  const totais = useMemo(() => totaisDoMes(transacoes), [transacoes]); // cards: mes inteiro, sem filtros
+  const filtradas = useMemo(() => filtrarTransacoes(transacoes, filtros), [transacoes, filtros]);
+  const totaisFiltro = useMemo(() => totaisDoMes(filtradas), [filtradas]);
+  // o grafico respeita busca, forma e "fora do fluxo", mas mostra todas as categorias (e o tipo e escolhido nele)
+  const gastos = useMemo(
+    () => gastosPorCategoria(filtrarTransacoes(transacoes, filtros, { ignorarCategorias: true, ignorarDirecao: true }), mapa, tipoGrafico),
+    [transacoes, filtros, mapa, tipoGrafico],
+  );
+  const semCategoria = useMemo(() => transacoes.filter((t) => !t.ignorar_no_fluxo && t.categoria_id === null).length, [transacoes]);
   const contas = useMemo(() => resumoDeContas(base?.contas ?? []), [base?.contas]);
 
+  const alternarCategoria = (chave: string) =>
+    setFiltros((f) => {
+      const jaTem = f.categorias.includes(chave);
+      return {
+        ...f,
+        categorias: jaTem ? f.categorias.filter((c) => c !== chave) : [...f.categorias, chave],
+        // clicar numa barra de "Saidas" mostra as saidas dessa categoria (o grafico so conta aquele tipo)
+        direcao: !jaTem && f.direcao === "TODAS" ? tipoGrafico : f.direcao,
+      };
+    });
+
   const mudarMes = (delta: number) => {
-    setCategoriaFiltro(null);
     setPeriodo(({ ano, mes }) => {
       const d = new Date(ano, mes - 1 + delta, 1);
       return { ano: d.getFullYear(), mes: d.getMonth() + 1 };
@@ -128,6 +152,38 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       await api.patch(`/api/v1/transacoes/${id}`, { ignorar_no_fluxo: ignorarNoFluxo });
     } catch {
       desfazer("Não foi possível salvar a alteração. Tente novamente.");
+    }
+  };
+
+  // Troca a linha editada pela devolvida pelo servidor; se a data saiu do mes exibido, a linha some daqui
+  const aplicarLinha = (linha: Transacao) => {
+    const { de, ate } = intervaloDoMes(periodo.ano, periodo.mes);
+    const dentroDoMes = linha.data >= de && linha.data <= ate;
+    setDadosTransacoes((atual) =>
+      atual && {
+        ...atual,
+        transacoes: dentroDoMes ? atual.transacoes.map((t) => (t.id === linha.id ? linha : t)) : atual.transacoes.filter((t) => t.id !== linha.id),
+      },
+    );
+  };
+
+  const salvarEdicao = async (id: string, alteracoes: Record<string, unknown>): Promise<string | null> => {
+    try {
+      const res = await api.patch(`/api/v1/transacoes/${id}`, alteracoes);
+      aplicarLinha(res.data as Transacao);
+      return null;
+    } catch (erro) {
+      return mensagemDeErro(erro);
+    }
+  };
+
+  const restaurarEdicao = async (id: string): Promise<string | null> => {
+    try {
+      const res = await api.post(`/api/v1/transacoes/${id}/restaurar`);
+      aplicarLinha(res.data as Transacao);
+      return null;
+    } catch (erro) {
+      return mensagemDeErro(erro, "Não foi possível restaurar. Tente novamente.");
     }
   };
 
@@ -172,31 +228,48 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
         <ResumoCards
           saldoEmConta={contas.saldoEmConta}
-          cartaoEmAberto={contas.cartaoEmAberto}
+          limiteUsado={contas.limiteUsado}
+          faturas={contas.faturas}
           temContas={contas.temContas}
           entradas={totais.entradas}
           saidas={totais.saidas}
         />
 
+        <FiltrosTransacoes filtros={filtros} onChange={setFiltros} categorias={base?.categorias ?? []} mapaCategorias={mapa} />
+
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="lg:col-span-1">
-            <GastosPorCategoria gastos={gastos} selecionada={categoriaFiltro} onSelecionar={setCategoriaFiltro} />
+            <GastosPorCategoria gastos={gastos} tipo={tipoGrafico} onTipo={setTipoGrafico} selecionadas={filtros.categorias} onAlternar={alternarCategoria} />
           </div>
           <div className="lg:col-span-2">
             <ListaTransacoes
-              key={chave.split("-").slice(0, 2).join("-")} // reinicia filtros e selecao ao trocar de mes
-              transacoes={transacoes}
+              key={`${periodo.ano}-${periodo.mes}`} // reinicia a selecao ao trocar de mes (os filtros permanecem)
+              transacoes={filtradas}
               categorias={base?.categorias ?? []}
               mapaCategorias={mapa}
-              categoriaFiltro={categoriaFiltro}
-              onLimparCategoriaFiltro={() => setCategoriaFiltro(null)}
               carregando={carregando}
+              filtrosAtivos={contarFiltrosAtivos(filtros)}
+              resumoFiltro={totaisFiltro}
+              semCategoria={semCategoria}
+              onVerSemCategoria={() => setFiltros({ ...FILTROS_VAZIOS, categorias: [SEM_CATEGORIA] })}
               onCategorizar={categorizar}
               onIgnorar={ignorar}
+              onEditar={setEditando}
             />
           </div>
         </div>
       </div>
+
+      {editando && (
+        <EditarTransacaoModal
+          key={editando.id}
+          transacao={editando}
+          categorias={base?.categorias ?? []}
+          onClose={() => setEditando(null)}
+          onSalvar={salvarEdicao}
+          onRestaurar={restaurarEdicao}
+        />
+      )}
 
       <CategoriasModal
         isOpen={modalCategorias}

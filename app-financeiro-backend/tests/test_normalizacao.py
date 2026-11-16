@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from src.sync import _data_transacao, normalizar_transacao, tipo_conta
+from src.sync import _data_transacao, normalizar_fatura, normalizar_transacao, tipo_conta
 
 
 def tx(**kw):
@@ -57,3 +57,19 @@ def test_pagamento_de_fatura_na_conta_corrente_fica_fora_do_fluxo():
 def test_pendente_e_valor_zero():
     assert normalizar_transacao(tx(status="PENDING"), "CORRENTE")["status"] == "PENDENTE"
     assert normalizar_transacao(tx(amount=0), "CORRENTE") is None
+
+
+def test_normalizar_fatura():
+    f = normalizar_fatura({"id": "f", "dueDate": "2026-11-20T00:00:00", "billClosingDate": "2026-11-13T00:00:00",
+                           "totalAmount": 1500.5, "minimumPaymentAmount": 200, "payments": [{"amount": 100}, {"amount": 50.25}]})
+    assert (str(f["vencimento"]), str(f["fechamento"]), f["total"], f["pagamentos"]) == ("2026-11-20", "2026-11-13", Decimal("1500.50"), Decimal("150.25"))
+    sem_fechamento = normalizar_fatura({"id": "f", "dueDate": "2026-11-20T00:00:00.000Z", "totalAmount": 10})
+    assert sem_fechamento["fechamento"] is None and sem_fechamento["minimo"] is None and sem_fechamento["pagamentos"] == Decimal("0.00")
+    assert normalizar_fatura({"id": "f", "totalAmount": 10}) is None and normalizar_fatura({"dueDate": "2026-01-01", "totalAmount": 1}) is None
+
+
+def test_original_guarda_o_que_o_banco_disse():
+    n = normalizar_transacao(tx(description="Mercado", amount=-12.5, creditCardMetadata={"installmentNumber": 1, "totalInstallments": 3}), "CORRENTE")
+    assert n["original"] == {"descricao": "Mercado", "data": "2026-11-03", "valor": "12.50", "direcao": "SAIDA",
+                             "metodo": "OUTRO", "parcela_atual": 1, "total_parcelas": 3}
+    assert n["campos_editados"] == []

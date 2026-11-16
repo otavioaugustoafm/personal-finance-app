@@ -22,3 +22,9 @@ export function intervaloDoMes(ano: number, mes: number): { de: string; ate: str
 export function dataHora(iso: string): string {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
 }
+
+/** "2026-11-05" -> "05/11/2026" */
+export function dataCompleta(data: string): string {
+  const [ano, mes, dia] = data.split("-");
+  return `${dia}/${mes}/${ano}`;
+}

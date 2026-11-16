@@ -40,7 +40,7 @@ def esquema():
 
     with psycopg.connect(TEST_DB, autocommit=True) as conn:
         conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")  # banco de teste: recria do zero
-        for arq in ("001_schema_open_finance.sql", "002_ajustes_sincronizacao.sql"):
+        for arq in ("001_schema_open_finance.sql", "002_ajustes_sincronizacao.sql", "003_edicao_e_faturas.sql"):
             conn.execute((MIGRACOES / arq).read_text(encoding="utf-8"))
 
 

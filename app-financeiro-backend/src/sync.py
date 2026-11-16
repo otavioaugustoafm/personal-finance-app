@@ -4,6 +4,7 @@ Roda uma vez por dia (EventBridge -> Lambda) ou na mao: `python -m src.sync`.
 
 Regras que protegem o que voce ja fez no app:
 - a sincronizacao NUNCA altera a categoria nem o "ignorar no fluxo" de uma transacao existente;
+- campos que VOCE editou (descricao, data, valor...) ficam como voce deixou: o que o banco diz fica em `original`;
 - o id de uma transacao pode mudar no Pluggy (principalmente no cartao, perto do fechamento da fatura);
   quando isso acontece a categoria e herdada pela nova transacao com mesma data + valor + descricao;
 - transacao que some do banco e marcada (sumiu_em) e nao apagada; se reaparecer, volta ao normal.
@@ -96,7 +97,7 @@ def normalizar_transacao(tx: dict, tipo: str) -> dict | None:
     desc_norm = _sem_acento_maiusculo(descricao)
     cartao = tx.get("creditCardMetadata") or {}
 
-    return {
+    dados = {
         "provedor_transacao_id": tx["id"],
         "provedor_id": tx.get("providerId"),
         "data": _data_transacao(tx["date"]),
@@ -110,30 +111,59 @@ def normalizar_transacao(tx: dict, tipo: str) -> dict | None:
         "operacao": tx.get("operationType"),
         "ignorar_no_fluxo": _eh_pagamento_de_fatura(tx, tipo, desc_norm, amount),
         "categoria_id": None,
+        "campos_editados": [],
         "bruto": tx,
+    }
+    # Retrato do que o BANCO informou (texto, para comparar com o que voce editar)
+    dados["original"] = {
+        "descricao": dados["descricao"], "data": dados["data"].isoformat(), "valor": str(dados["valor"]),
+        "direcao": dados["direcao"], "metodo": dados["metodo"],
+        "parcela_atual": dados["parcela_atual"], "total_parcelas": dados["total_parcelas"],
+    }
+    return dados
+
+
+def normalizar_fatura(b: dict) -> dict | None:
+    """Fatura do Pluggy -> nosso formato. None se faltar o essencial (vencimento e total)."""
+    if not b.get("id") or not b.get("dueDate") or b.get("totalAmount") is None:
+        return None
+    fechamento = b.get("billClosingDate")
+    return {
+        "provedor_fatura_id": b["id"],
+        "vencimento": _data_transacao(b["dueDate"]),
+        "fechamento": _data_transacao(fechamento) if fechamento else None,
+        "total": Decimal(str(b["totalAmount"])).quantize(Decimal("0.01")),
+        "minimo": Decimal(str(b["minimumPaymentAmount"])).quantize(Decimal("0.01")) if b.get("minimumPaymentAmount") is not None else None,
+        "pagamentos": sum((Decimal(str(p.get("amount") or 0)) for p in b.get("payments") or []), Decimal("0")).quantize(Decimal("0.01")),
     }
 
 
 # ======================= gravacao =======================
-UPSERT_TRANSACAO = """
+CAMPOS_EDITAVEIS = ("descricao", "data", "valor", "direcao", "metodo", "parcela_atual", "total_parcelas")
+
+
+def _manter_se_editado(campo: str) -> str:
+    return f"{campo} = CASE WHEN '{campo}' = ANY(transacoes.campos_editados) THEN transacoes.{campo} ELSE EXCLUDED.{campo} END"
+
+
+UPSERT_TRANSACAO = f"""
 INSERT INTO transacoes (conta_id, provedor_transacao_id, provedor_id, data, descricao, valor, direcao,
                         metodo, status, parcela_atual, total_parcelas, operacao, categoria_id,
-                        ignorar_no_fluxo, bruto)
+                        ignorar_no_fluxo, bruto, original, campos_editados)
 VALUES (%(conta_id)s, %(provedor_transacao_id)s, %(provedor_id)s, %(data)s, %(descricao)s, %(valor)s,
         %(direcao)s, %(metodo)s, %(status)s, %(parcela_atual)s, %(total_parcelas)s, %(operacao)s,
-        %(categoria_id)s, %(ignorar_no_fluxo)s, %(bruto)s)
+        %(categoria_id)s, %(ignorar_no_fluxo)s, %(bruto)s, %(original)s, %(campos_editados)s)
 ON CONFLICT (conta_id, provedor_transacao_id) DO UPDATE SET
-  provedor_id = EXCLUDED.provedor_id, data = EXCLUDED.data, descricao = EXCLUDED.descricao,
-  valor = EXCLUDED.valor, direcao = EXCLUDED.direcao, metodo = EXCLUDED.metodo,
-  status = EXCLUDED.status, parcela_atual = EXCLUDED.parcela_atual,
-  total_parcelas = EXCLUDED.total_parcelas, operacao = EXCLUDED.operacao,
-  bruto = EXCLUDED.bruto, sumiu_em = NULL, atualizado_em = now()
-"""  # categoria_id e ignorar_no_fluxo ficam de fora do UPDATE de proposito
+  {", ".join(_manter_se_editado(c) for c in CAMPOS_EDITAVEIS)},
+  provedor_id = EXCLUDED.provedor_id, status = EXCLUDED.status, operacao = EXCLUDED.operacao,
+  original = EXCLUDED.original, bruto = EXCLUDED.bruto, sumiu_em = NULL, atualizado_em = now()
+"""  # categoria_id, ignorar_no_fluxo e campos_editados ficam de fora do UPDATE de proposito
 
 
 def _gravar_transacoes(cur, conta_id, remotas: list[dict], data_de: date) -> dict:
     cur.execute(
-        """SELECT id, provedor_transacao_id, data, valor, descricao, categoria_id, ignorar_no_fluxo
+        """SELECT id, provedor_transacao_id, data, valor, descricao, direcao, metodo, parcela_atual,
+                  total_parcelas, categoria_id, ignorar_no_fluxo, campos_editados, original
              FROM transacoes WHERE conta_id = %s AND data >= %s""",
         (conta_id, data_de),
     )
@@ -154,15 +184,19 @@ def _gravar_transacoes(cur, conta_id, remotas: list[dict], data_de: date) -> dic
         for orfa in orfas:
             if orfa["id"] in consumidas:
                 continue
-            if (orfa["data"], orfa["valor"], orfa["descricao"]) == (nova["data"], nova["valor"], nova["descricao"]):
+            o, n = orfa["original"], nova["original"]  # compara o que o BANCO disse, nao o que voce editou
+            if (o["data"], o["valor"], o["descricao"]) == (n["data"], n["valor"], n["descricao"]):
                 nova["categoria_id"] = orfa["categoria_id"]
                 nova["ignorar_no_fluxo"] = orfa["ignorar_no_fluxo"]
+                nova["campos_editados"] = list(orfa["campos_editados"])
+                for campo in orfa["campos_editados"]:  # suas edicoes passam para a transacao nova
+                    nova[campo] = orfa[campo]
                 consumidas.add(orfa["id"])
                 break
     if consumidas:
         cur.execute("DELETE FROM transacoes WHERE id = ANY(%s)", (list(consumidas),))
 
-    linhas = [{**t, "conta_id": conta_id, "bruto": Jsonb(t["bruto"])} for t in remotas]
+    linhas = [{**t, "conta_id": conta_id, "bruto": Jsonb(t["bruto"]), "original": Jsonb(t["original"])} for t in remotas]
     if linhas:
         cur.executemany(UPSERT_TRANSACAO, linhas)
 
@@ -175,6 +209,19 @@ def _gravar_transacoes(cur, conta_id, remotas: list[dict], data_de: date) -> dic
         "sumiram": len(sumidas),
         "avisos": avisos,
     }
+
+
+def _gravar_faturas(cur, conta_id, faturas: list[dict]) -> None:
+    if faturas:
+        cur.executemany(
+            """INSERT INTO faturas (conta_id, provedor_fatura_id, vencimento, fechamento, total, minimo, pagamentos)
+               VALUES (%(conta_id)s, %(provedor_fatura_id)s, %(vencimento)s, %(fechamento)s, %(total)s,
+                       %(minimo)s, %(pagamentos)s)
+               ON CONFLICT (conta_id, provedor_fatura_id) DO UPDATE SET
+                 vencimento = EXCLUDED.vencimento, fechamento = EXCLUDED.fechamento, total = EXCLUDED.total,
+                 minimo = EXCLUDED.minimo, pagamentos = EXCLUDED.pagamentos, atualizado_em = now()""",
+            [{**f, "conta_id": conta_id} for f in faturas],
+        )
 
 
 def _parse_dt(valor: str | None) -> datetime | None:
@@ -223,13 +270,14 @@ def _sincronizar_item(cliente, item_id: str, hoje: date) -> dict:
             if not tipo:
                 continue
             cur.execute(
-                """INSERT INTO contas (conexao_id, provedor_conta_id, tipo, nome, saldo, saldo_atualizado_em)
-                   VALUES (%s, %s, %s, %s, %s, now())
+                """INSERT INTO contas (conexao_id, provedor_conta_id, tipo, nome, saldo, saldo_atualizado_em, detalhes)
+                   VALUES (%s, %s, %s, %s, %s, now(), %s)
                    ON CONFLICT (conexao_id, provedor_conta_id) DO UPDATE SET
                      tipo = EXCLUDED.tipo, nome = EXCLUDED.nome, saldo = EXCLUDED.saldo,
-                     saldo_atualizado_em = now()
+                     saldo_atualizado_em = now(), detalhes = EXCLUDED.detalhes
                    RETURNING id""",
-                (conexao_id, c["id"], tipo, c.get("marketingName") or c.get("name"), c.get("balance")),
+                (conexao_id, c["id"], tipo, c.get("marketingName") or c.get("name"), c.get("balance"),
+                 Jsonb(c.get("creditData") or c.get("bankData") or {})),
             )
             conta_id = cur.fetchone()["id"]
             cur.execute("SELECT EXISTS (SELECT 1 FROM transacoes WHERE conta_id = %s) AS tem", (conta_id,))
@@ -240,12 +288,19 @@ def _sincronizar_item(cliente, item_id: str, hoje: date) -> dict:
     for conta_id, remoto_id, tipo, primeira_carga in contas:
         data_de = hoje - timedelta(days=JANELA_PRIMEIRA_CARGA_DIAS if primeira_carga else JANELA_INCREMENTAL_DIAS)
         normalizadas = [n for n in (normalizar_transacao(t, tipo) for t in cliente.transacoes(remoto_id, data_de)) if n]
-        coletado.append((conta_id, data_de, normalizadas))
+        faturas: list[dict] = []
+        if tipo == "CARTAO_CREDITO":
+            try:  # faturas nao existem em todas as conexoes: falhar aqui nao pode derrubar a sincronizacao
+                faturas = [f for f in (normalizar_fatura(b) for b in cliente.faturas(remoto_id)) if f]
+            except PluggyError as erro:
+                logger.warning("Faturas indisponiveis para a conta %s: %s", remoto_id[:8], erro)
+        coletado.append((conta_id, data_de, normalizadas, faturas))
 
     # 3) banco: grava tudo do item numa transacao so
     total = {"novas": 0, "atualizadas": 0, "sumiram": 0, "avisos": avisos}
     with get_db_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        for conta_id, data_de, normalizadas in coletado:
+        for conta_id, data_de, normalizadas, faturas in coletado:
+            _gravar_faturas(cur, conta_id, faturas)
             r = _gravar_transacoes(cur, conta_id, normalizadas, data_de)
             for chave in ("novas", "atualizadas", "sumiram"):
                 total[chave] += r[chave]

@@ -55,7 +55,8 @@ git push -u origin main
 1. No projeto novo do Neon, abra o **SQL Editor**.
 2. Cole e execute `app-financeiro-backend/migrations/001_schema_open_finance.sql`.
 3. Cole e execute `app-financeiro-backend/migrations/002_ajustes_sincronizacao.sql`. (Sempre nessa ordem.)
-4. Clique em **Connect** e copie a string de conexão **com "Connection pooling" ligado** (o host contém `-pooler`).
+4. Cole e execute `app-financeiro-backend/migrations/003_edicao_e_faturas.sql`.
+5. Clique em **Connect** e copie a string de conexão **com "Connection pooling" ligado** (o host contém `-pooler`).
    Essa é a `DATABASE_URL`.
 
 ---
@@ -269,6 +270,7 @@ Onde olhar: Lambda → aba **Monitor** → **View CloudWatch logs** → abra o l
 
 ## Atualizar depois
 
+- **Mudou o banco (arquivo novo em `migrations/`)?** Rode o SQL novo no SQL Editor do Neon **antes** de subir o código novo.
 - **Código do backend:** rode `python scripts\montar_zip_lambda.py` e suba o novo zip nas **duas** Lambdas
   (Code → Upload from → .zip).
 - **Front-end:** é só `git push`; o Amplify faz o deploy sozinho.

@@ -100,6 +100,18 @@ class PluggyClient:
             pagina += 1
         return resultados
 
+    def faturas(self, conta_id: str) -> list[dict]:
+        """Faturas do cartao (so existem em conexoes Open Finance regulado)."""
+        resultados: list[dict] = []
+        pagina = 1
+        while pagina <= MAX_PAGINAS:
+            resp = self._requisitar("/bills", {"accountId": conta_id, "page": pagina})
+            resultados.extend(resp.get("results", []))
+            if pagina >= resp.get("totalPages", 1):
+                break
+            pagina += 1
+        return resultados
+
     def transacoes(self, conta_id: str, data_de: date) -> list[dict]:
         """Todas as transacoes da conta a partir de data_de (paginacao por cursor, 500 por pagina)."""
         resultados: list[dict] = []

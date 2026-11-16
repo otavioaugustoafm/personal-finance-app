@@ -29,9 +29,10 @@ O passo a passo completo (GitHub, Neon, Lambda, API Gateway, agendamento e Ampli
    ```bash
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/001_schema_open_finance.sql
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/002_ajustes_sincronizacao.sql
+   psql "$DATABASE_URL" -f app-financeiro-backend/migrations/003_edicao_e_faturas.sql
    ```
    (Sem `psql`: cole o conteúdo de cada arquivo, na ordem, no **SQL Editor** do Neon.
-   Se você já rodou o 001 antes, rode só o 002.)
+   Se você já rodou o 001 e o 002, rode só o 003.)
 
 ### 2. Backend
 
@@ -82,9 +83,16 @@ depois, ela falha com a mensagem para refazer o passo 2. Ao renovar, confira se 
 
 ## O dashboard (página única)
 
-- **Cards:** saldo em conta, cartão em aberto (valor informado pelo banco), entradas e saídas do mês.
+- **Cards:** saldo em conta, **próxima fatura** do cartão (valor e vencimento informados pelo banco), entradas e saídas do mês.
+  O "limite usado" aparece à parte: nas conexões Open Finance o banco informa o limite utilizado (que inclui parcelas
+  futuras), e isso **não é** a fatura.
 - **Mês:** setas no topo trocam o mês; tudo (cards, gráfico e lista) acompanha.
-- **Gastos por categoria:** barras com valor e %; clique numa barra para filtrar a lista (só saídas). "Sem categoria" mostra o que falta classificar.
+- **Filtros** (acima do gráfico e da lista): busca na descrição, entradas/saídas, forma (PIX, Débito, Crédito, Outro — pode combinar),
+  e categorias (várias de uma vez, incluindo "Sem categoria"). "Limpar filtros" zera tudo. Os filtros permanecem ao trocar de mês.
+- **Gráfico de barras por categoria** (saídas ou entradas): respeita os filtros; clique numa barra, ou na legenda, para filtrar a lista.
+- **Editar transação** (lápis): descrição, valor, data, tipo, forma, categoria, parcelas e "fora do fluxo". O que você editar **não é
+  desfeito pela sincronização diária**; campos que você não mexer continuam acompanhando o banco. A tela mostra o que o banco informou
+  e há "Restaurar valores do banco".
 - **Lista de transações:** escolha a categoria no próprio item (salva na hora). Marque várias e use "Aplicar" para categorizar em lote.
 - **Fora do fluxo (olho):** tira a transação dos totais, como pagamento de fatura. Dá para desfazer.
 - **Avisos:** sincronização com erro ou desatualizada (+36h) e autorização do Meu Pluggy perto de expirar.
@@ -101,10 +109,11 @@ então você só digita a senha uma vez por semana. Quem acessar o domínio sem 
 | Método | Rota | Descrição |
 |---|---|---|
 | POST | `/api/v1/auth/login` | `{ "senha": "..." }` → `{ token, expira_em }` |
-| GET | `/api/v1/contas` | contas, tipo (CORRENTE/POUPANCA/CARTAO_CREDITO) e saldo da última sincronização |
+| GET | `/api/v1/contas` | contas, saldo, limites do cartão e `proximas_faturas` (as 2 próximas a vencer) |
 | GET | `/api/v1/transacoes` | filtros: `de`, `ate`, `direcao`, `categoria_id`, `sem_categoria`, `incluir_ignoradas`, `limite`, `deslocamento`; devolve também `totais` |
 | POST | `/api/v1/transacoes/categorizar-em-lote` | `{ "ids": [uuid, ...], "categoria_id": uuid\|null }` (até 500) |
-| PATCH | `/api/v1/transacoes/{id}` | `{ "categoria_id": uuid\|null, "ignorar_no_fluxo": bool }` |
+| PATCH | `/api/v1/transacoes/{id}` | edita qualquer campo (só o que for enviado muda): `descricao`, `data`, `valor`, `direcao`, `metodo`, `parcela_atual`, `total_parcelas`, `categoria_id`, `ignorar_no_fluxo` |
+| POST | `/api/v1/transacoes/{id}/restaurar` | volta descrição, data, valor, tipo, forma e parcelas ao que o banco informou |
 | GET | `/api/v1/sincronizacao/status` | última sincronização e validade da autorização do Meu Pluggy |
 | GET/POST | `/api/v1/categorias` | lista / cria (`nome`, `tipo` = ENTRADA\|SAIDA, `cor` opcional) |
 | PUT/DELETE | `/api/v1/categorias/{id}` | renomeia / exclui (transações ficam sem categoria) |
@@ -119,6 +128,11 @@ TEST_DATABASE_URL=... pytest              # inclui os testes de banco
 ```
 
 Os testes de banco **apagam todas as tabelas** do banco indicado em `TEST_DATABASE_URL`: use uma branch descartável do Neon, nunca a real.
+
+## Fatura diferente do app do banco?
+
+Rode `python -m src.diagnostico` (no backend, com o `.env` preenchido). Ele mostra o que o Pluggy devolve para o cartão (limite, faturas e
+um resumo das compras recentes) **sem nomes, CPF nem número de cartão**, e serve para entender qualquer diferença.
 
 ## Segurança
 

@@ -24,3 +24,14 @@ api.interceptors.response.use(
     return Promise.reject(erro);
   },
 );
+
+/** Texto amigavel para erros do backend (o FastAPI manda `detail` como texto ou como lista de problemas). */
+export function mensagemDeErro(erro: unknown, padrao = "Não foi possível salvar. Tente novamente."): string {
+  const detalhe = (erro as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+  if (typeof detalhe === "string") return detalhe;
+  if (Array.isArray(detalhe)) {
+    const msgs = detalhe.map((d) => (d as { msg?: string }).msg).filter(Boolean);
+    if (msgs.length) return msgs.join(" ");
+  }
+  return padrao;
+}

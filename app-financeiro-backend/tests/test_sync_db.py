@@ -15,18 +15,26 @@ HOJE = date(2026, 11, 9)
 
 
 class ClienteFalso:
-    def __init__(self, item=None, contas=None, transacoes=None):
+    def __init__(self, item=None, contas=None, transacoes=None, faturas=None):
         self._item = item or {"id": "item-1", "status": "UPDATED", "consentExpiresAt": "2027-06-01T00:00:00.000Z",
                               "connector": {"name": "MeuPluggy"}}
         self._contas = contas if contas is not None else [
             {"id": "cc-1", "type": "BANK", "subtype": "CHECKING_ACCOUNT", "name": "Conta Corrente", "balance": 1200.5},
-            {"id": "cart-1", "type": "CREDIT", "subtype": "CREDIT_CARD", "name": "Cartao", "balance": 300},
+            {"id": "cart-1", "type": "CREDIT", "subtype": "CREDIT_CARD", "name": "Cartao", "balance": 300,
+             "creditData": {"creditLimit": 5000, "availableCreditLimit": 2600}},
         ]
         self.transacoes_por_conta = transacoes or {"cc-1": [], "cart-1": []}
+        self.faturas_por_conta = faturas or {}
 
     def item(self, _): return self._item
     def contas(self, _): return self._contas
     def transacoes(self, conta_id, _data_de): return list(self.transacoes_por_conta[conta_id])
+
+    def faturas(self, conta_id):
+        resultado = self.faturas_por_conta.get(conta_id, [])
+        if isinstance(resultado, Exception):
+            raise resultado
+        return list(resultado)
 
 
 def t(id_, desc="Mercado", amount=-50, data="2026-11-05T00:00:00.000Z", **kw):
@@ -116,3 +124,26 @@ def test_aviso_de_expiracao_proxima():
     perto = (datetime.now(timezone.utc) + timedelta(days=10)).isoformat().replace("+00:00", "Z")
     c = ClienteFalso(item={"id": "item-1", "status": "UPDATED", "consentExpiresAt": perto})
     assert any("expira em" in a for a in rodar(c)["avisos"])
+
+
+def test_fatura_que_falha_nao_derruba_a_sincronizacao():
+    from src.pluggy import PluggyError
+    c = ClienteFalso(transacoes={"cc-1": [t("a")], "cart-1": []}, faturas={"cart-1": PluggyError("HTTP 404 em /bills")})
+    r = rodar(c)
+    assert r["status"] == "OK" and r["novas"] == 1
+    assert consultar("SELECT count(*) AS n FROM faturas")[0]["n"] == 0
+
+
+def test_faturas_sao_gravadas_e_atualizadas_sem_duplicar():
+    fat = {"id": "f1", "dueDate": "2026-11-20T00:00:00", "billClosingDate": "2026-11-13T00:00:00", "totalAmount": 1500,
+           "minimumPaymentAmount": 200, "payments": [{"amount": 100}, {"amount": 50.5}]}
+    c = ClienteFalso(faturas={"cart-1": [fat, {"id": "sem-vencimento", "totalAmount": 10}]})
+    rodar(c); rodar(c)
+    linhas = consultar("SELECT vencimento, fechamento, total, minimo, pagamentos FROM faturas")
+    assert len(linhas) == 1  # a invalida (sem vencimento) foi ignorada e a repeticao nao duplicou
+    assert str(linhas[0]["vencimento"]) == "2026-11-20" and str(linhas[0]["fechamento"]) == "2026-11-13"
+    assert float(linhas[0]["total"]) == 1500 and float(linhas[0]["pagamentos"]) == 150.5
+    c.faturas_por_conta["cart-1"] = [{**fat, "totalAmount": 1620}]
+    rodar(c)
+    assert float(consultar("SELECT total FROM faturas")[0]["total"]) == 1620
+    assert consultar("SELECT detalhes->>'creditLimit' AS l FROM contas WHERE tipo = 'CARTAO_CREDITO'")[0]["l"] == "5000"

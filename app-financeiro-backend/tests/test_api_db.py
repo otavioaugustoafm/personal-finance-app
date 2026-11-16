@@ -24,6 +24,7 @@ def api():
     c = TestClient(app)
     token = c.post("/api/v1/auth/login", json={"senha": "senha-de-teste-123"}).json()["token"]
     c.headers.update({"Authorization": f"Bearer {token}"})
+    c.pluggy = cliente  # o teste pode mudar o que o "banco" devolve na proxima sincronizacao
     return c
 
 
@@ -73,3 +74,89 @@ def test_contas_e_status(api):
     assert contas == {"CORRENTE": 1200.5, "CARTAO_CREDITO": 300.0}
     s = api.get("/api/v1/sincronizacao/status").json()
     assert s["ultima"]["status"] == "OK" and s["conexoes"][0]["dias_para_expirar"] is not None
+
+
+# ---------------------- edicao completa ----------------------
+def _id(api, descricao):
+    return next(x["id"] for x in api.get("/api/v1/transacoes?incluir_ignoradas=true").json()["transacoes"] if x["descricao"] == descricao)
+
+
+def test_editar_varios_atributos_de_uma_vez(api):
+    tid = _id(api, "PIX MERCADO")
+    cat = api.post("/api/v1/categorias", json={"nome": "Mercado", "tipo": "SAIDA"}).json()["id"]
+    r = api.patch(f"/api/v1/transacoes/{tid}", json={"descricao": "Feira do bairro", "valor": "55.90", "metodo": "DEBITO",
+                                                      "data": "2026-11-04", "categoria_id": cat}).json()
+    assert (r["descricao"], float(r["valor"]), r["metodo"], r["data"], r["categoria_id"]) == ("Feira do bairro", 55.9, "DEBITO", "2026-11-04", cat)
+    assert sorted(r["campos_editados"]) == ["data", "descricao", "metodo", "valor"]  # categoria nao conta como edicao do banco
+    assert r["original"]["descricao"] == "PIX MERCADO" and r["original"]["valor"] == "50.00"
+    assert float(api.get("/api/v1/transacoes").json()["totais"]["saidas"]) == 55.9 + 80
+
+
+def test_sincronizar_nao_desfaz_edicao_mas_atualiza_o_resto(api):
+    tid = _id(api, "PIX MERCADO")
+    api.patch(f"/api/v1/transacoes/{tid}", json={"descricao": "Feira do bairro", "valor": "55.90"})
+    from src.sync import sincronizar
+    # o banco corrige valor, descricao e data da transacao
+    api.pluggy.transacoes_por_conta["cc-1"][0] = t("a", desc="PIX MERCADO CENTRAL", amount=-52, data="2026-11-06T00:00:00.000Z", operationType="PIX")
+    sincronizar(api.pluggy, ["item-1"], date(2026, 11, 9))
+    r = next(x for x in api.get("/api/v1/transacoes?incluir_ignoradas=true").json()["transacoes"] if x["id"] == tid)
+    assert r["descricao"] == "Feira do bairro" and float(r["valor"]) == 55.9      # edicoes preservadas
+    assert r["data"] == "2026-11-06"                                               # o que voce nao editou acompanha o banco
+    assert r["original"]["descricao"] == "PIX MERCADO CENTRAL" and r["original"]["valor"] == "52.00"
+
+
+def test_voltar_ao_valor_do_banco_deixa_de_ser_edicao(api):
+    tid = _id(api, "PIX MERCADO")
+    api.patch(f"/api/v1/transacoes/{tid}", json={"valor": "60"})
+    r = api.patch(f"/api/v1/transacoes/{tid}", json={"valor": "50.00"}).json()
+    assert r["campos_editados"] == []
+
+
+def test_restaurar_volta_ao_que_o_banco_informou(api):
+    tid = _id(api, "PIX MERCADO")
+    cat = api.post("/api/v1/categorias", json={"nome": "Mercado", "tipo": "SAIDA"}).json()["id"]
+    api.patch(f"/api/v1/transacoes/{tid}", json={"descricao": "X", "valor": "1", "direcao": "ENTRADA", "metodo": "OUTRO",
+                                                  "parcela_atual": 1, "total_parcelas": 2, "categoria_id": cat})
+    r = api.post(f"/api/v1/transacoes/{tid}/restaurar").json()
+    assert (r["descricao"], float(r["valor"]), r["direcao"], r["metodo"], r["parcela_atual"]) == ("PIX MERCADO", 50.0, "SAIDA", "PIX", None)
+    assert r["campos_editados"] == [] and r["categoria_id"] == cat  # a categoria e sua e permanece
+    assert api.post("/api/v1/transacoes/11111111-1111-1111-1111-111111111111/restaurar").status_code == 404
+
+
+def test_id_mudou_no_pluggy_e_a_transacao_estava_editada(api):
+    from src.sync import sincronizar
+    tid = _id(api, "PIX MERCADO")
+    cat = api.post("/api/v1/categorias", json={"nome": "Mercado", "tipo": "SAIDA"}).json()["id"]
+    api.patch(f"/api/v1/transacoes/{tid}", json={"descricao": "Feira do bairro", "categoria_id": cat})
+    api.pluggy.transacoes_por_conta["cc-1"][0] = t("novo-id", desc="PIX MERCADO", amount=-50, operationType="PIX")  # delete + create
+    sincronizar(api.pluggy, ["item-1"], date(2026, 11, 9))
+    todas = api.get("/api/v1/transacoes?incluir_ignoradas=true").json()["transacoes"]
+    assert len(todas) == 4  # nao duplicou
+    r = next(x for x in todas if x["descricao"] == "Feira do bairro")  # a edicao e a categoria vieram junto
+    assert r["categoria_id"] == cat and r["campos_editados"] == ["descricao"]
+
+
+def test_edicao_invalida_e_rejeitada(api):
+    tid = _id(api, "PIX MERCADO")
+    for corpo in ({"valor": "0"}, {"valor": "-5"}, {"valor": "abc"}, {"valor": "1.234"}, {"descricao": ""}, {"descricao": None},
+                  {"metodo": "CHEQUE"}, {"direcao": "X"}, {"data": "ontem"}, {"parcela_atual": 5, "total_parcelas": 2}, {"parcela_atual": 0}):
+        assert api.patch(f"/api/v1/transacoes/{tid}", json=corpo).status_code == 422, corpo
+    api.patch(f"/api/v1/transacoes/{tid}", json={"total_parcelas": 3})
+    assert api.patch(f"/api/v1/transacoes/{tid}", json={"parcela_atual": 9}).status_code == 422  # coerencia com o total ja salvo
+    assert api.patch("/api/v1/transacoes/11111111-1111-1111-1111-111111111111", json={"descricao": "x"}).status_code == 404
+    assert api.get("/api/v1/transacoes").json()["totais"]["saidas"] == 130  # nada foi alterado pelas tentativas invalidas
+
+
+def test_contas_trazem_limite_e_proximas_faturas(api):
+    from datetime import datetime, timedelta, timezone
+    from src.sync import sincronizar
+    hoje = datetime.now(timezone(timedelta(hours=-3))).date()
+    def fatura(id_, dias, total):
+        return {"id": id_, "dueDate": f"{hoje + timedelta(days=dias)}T00:00:00", "totalAmount": total, "payments": []}
+    api.pluggy.faturas_por_conta["cart-1"] = [fatura("passada", -20, 700), fatura("proxima", 5, 1500), fatura("seguinte", 35, 900), fatura("longe", 65, 100)]
+    sincronizar(api.pluggy, ["item-1"], date(2026, 11, 9))
+    cartao = next(c for c in api.get("/api/v1/contas").json()["contas"] if c["tipo"] == "CARTAO_CREDITO")
+    assert (cartao["saldo"], cartao["limite_total"], cartao["limite_disponivel"]) == (300.0, 5000.0, 2600.0)
+    assert [f["total"] for f in cartao["proximas_faturas"]] == [1500.0, 900.0]  # so futuras, as 2 mais proximas, em ordem
+    corrente = next(c for c in api.get("/api/v1/contas").json()["contas"] if c["tipo"] == "CORRENTE")
+    assert corrente["proximas_faturas"] == []
