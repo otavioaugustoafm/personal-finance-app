@@ -223,6 +223,7 @@ Console → **AWS Amplify** → **Create new app** → **GitHub** → autorize e
 3. Em **Environment variables**, adicione `VITE_API_URL` = a **Invoke URL** do passo 7, **sem barra no final**.
 4. **Save and deploy**. Ao terminar, copie o endereço do app (`https://main.xxxx.amplifyapp.com`).
 
+> Opcional: `VITE_DIA_INICIO_PERIODO` (padrão 27) define em que dia do mês anterior o período do painel começa.
 > A `VITE_API_URL` é gravada no site na hora do build. Se mudar depois, faça um novo deploy (Redeploy this version).
 
 ---

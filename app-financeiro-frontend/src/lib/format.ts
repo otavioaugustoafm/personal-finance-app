@@ -12,13 +12,6 @@ export function nomeDoMes(ano: number, mes: number): string {
   return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(new Date(ano, mes - 1, 1));
 }
 
-const dois = (n: number) => String(n).padStart(2, "0");
-
-export function intervaloDoMes(ano: number, mes: number): { de: string; ate: string } {
-  const ultimoDia = new Date(ano, mes, 0).getDate();
-  return { de: `${ano}-${dois(mes)}-01`, ate: `${ano}-${dois(mes)}-${dois(ultimoDia)}` };
-}
-
 export function dataHora(iso: string): string {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
 }

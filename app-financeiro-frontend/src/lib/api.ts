@@ -27,6 +27,10 @@ api.interceptors.response.use(
 
 /** Texto amigavel para erros do backend (o FastAPI manda `detail` como texto ou como lista de problemas). */
 export function mensagemDeErro(erro: unknown, padrao = "Não foi possível salvar. Tente novamente."): string {
+  // sem resposta nenhuma = nao chegou na API (rede, URL errada ou bloqueio de CORS no navegador)
+  if (!(erro as { response?: unknown }).response) {
+    return "Sem resposta do servidor. Verifique a conexão, a VITE_API_URL e o ALLOWED_ORIGINS da API.";
+  }
   const detalhe = (erro as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
   if (typeof detalhe === "string") return detalhe;
   if (Array.isArray(detalhe)) {

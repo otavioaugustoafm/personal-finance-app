@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, LogOut, Tags } from "lucide-react";
 import { api, mensagemDeErro } from "../lib/api";
 import {
-  FILTROS_VAZIOS, SEM_CATEGORIA, contarFiltrosAtivos, filtrarTransacoes, gastosPorCategoria, mapaDeCategorias,
-  resumoDeContas, totaisDoMes, type Filtros,
+  FILTROS_VAZIOS, SEM_CATEGORIA, categoriaDeGastoPorNome, comprasNoCredito, contarFiltrosAtivos, filtrarTransacoes,
+  gastosPorCategoria, mapaDeCategorias, resumoDeContas, totaisDoMes, totalDaCategoria, type Filtros,
 } from "../lib/calculos";
-import { intervaloDoMes, nomeDoMes } from "../lib/format";
+import { nomeDoMes } from "../lib/format";
+import { intervaloDoPeriodo, periodoDeHoje, rotuloDoIntervalo, somarMeses, type Periodo } from "../lib/periodo";
 import type { Categoria, Conta, Direcao, StatusSincronizacao, Transacao } from "../lib/types";
 import AvisosSincronizacao from "./AvisosSincronizacao";
 import CategoriasModal from "./CategoriasModal";
@@ -19,11 +20,6 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-interface Mes {
-  ano: number;
-  mes: number;
-}
-
 interface Base {
   categorias: Categoria[];
   contas: Conta[];
@@ -34,13 +30,20 @@ interface Base {
 const LOTE_MAXIMO = 500; // limite do endpoint de categorizacao em lote
 const HORAS_ATE_DESATUALIZAR = 36;
 
-function mesAtual(): Mes {
-  const hoje = new Date();
-  return { ano: hoje.getFullYear(), mes: hoje.getMonth() + 1 };
+const CHAVE_DESTAQUE = "categoria-em-destaque";
+const NOME_PADRAO_DESTAQUE = "Gastos da Mãe";
+
+function lerDestaqueSalvo(): string | null {
+  try {
+    return localStorage.getItem(CHAVE_DESTAQUE);
+  } catch {
+    return null; // navegador sem armazenamento: o card ainda funciona, so nao lembra a escolha
+  }
 }
 
 export default function Dashboard({ onLogout }: DashboardProps) {
-  const [periodo, setPeriodo] = useState<Mes>(mesAtual);
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoDeHoje(new Date()));
+  const [idDestaqueSalvo, setIdDestaqueSalvo] = useState<string | null>(lerDestaqueSalvo);
   const [versaoBase, setVersaoBase] = useState(0);
   const [base, setBase] = useState<(Base & { versao: number }) | null>(null);
   const [versaoTransacoes, setVersaoTransacoes] = useState(0);
@@ -78,7 +81,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   // Transacoes do mes escolhido
   useEffect(() => {
     let ativo = true;
-    const { de, ate } = intervaloDoMes(periodo.ano, periodo.mes);
+    const { de, ate } = intervaloDoPeriodo(periodo);
     api
       .get("/api/v1/transacoes", { params: { de, ate, incluir_ignoradas: true, limite: 1000 } })
       .then((res) => ativo && setDadosTransacoes({ chave, transacoes: res.data.transacoes }))
@@ -101,6 +104,30 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   );
   const semCategoria = useMemo(() => transacoes.filter((t) => !t.ignorar_no_fluxo && t.categoria_id === null).length, [transacoes]);
   const contas = useMemo(() => resumoDeContas(base?.contas ?? []), [base?.contas]);
+  const rotuloPeriodo = useMemo(() => {
+    const { de, ate } = intervaloDoPeriodo(periodo);
+    return rotuloDoIntervalo(de, ate);
+  }, [periodo]);
+  const compras = useMemo(() => comprasNoCredito(transacoes), [transacoes]);
+  const categoriasDeGasto = useMemo(() => (base?.categorias ?? []).filter((c) => c.tipo === "SAIDA"), [base?.categorias]);
+  // a escolhida pelo usuario; se nao houver (ou foi excluida), a que se chama "Gastos da Mae"
+  const categoriaDestaque = useMemo(
+    () => categoriasDeGasto.find((c) => c.id === idDestaqueSalvo) ?? categoriaDeGastoPorNome(categoriasDeGasto, NOME_PADRAO_DESTAQUE),
+    [categoriasDeGasto, idDestaqueSalvo],
+  );
+  const destaque = useMemo(
+    () => (categoriaDestaque ? { nome: categoriaDestaque.nome, ...totalDaCategoria(transacoes, categoriaDestaque.id) } : null),
+    [categoriaDestaque, transacoes],
+  );
+
+  const trocarDestaque = (id: string) => {
+    setIdDestaqueSalvo(id);
+    try {
+      localStorage.setItem(CHAVE_DESTAQUE, id);
+    } catch {
+      /* sem armazenamento: vale so ate recarregar */
+    }
+  };
 
   const alternarCategoria = (chave: string) =>
     setFiltros((f) => {
@@ -113,12 +140,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       };
     });
 
-  const mudarMes = (delta: number) => {
-    setPeriodo(({ ano, mes }) => {
-      const d = new Date(ano, mes - 1 + delta, 1);
-      return { ano: d.getFullYear(), mes: d.getMonth() + 1 };
-    });
-  };
+  const mudarMes = (delta: number) => setPeriodo((p) => somarMeses(p, delta));
 
   // Atualiza a tela na hora e confirma no servidor; se falhar, desfaz.
   const atualizarLocalmente = (ids: string[], mudanca: Partial<Transacao>) =>
@@ -141,8 +163,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           await api.post("/api/v1/transacoes/categorizar-em-lote", { ids: ids.slice(i, i + LOTE_MAXIMO), categoria_id: categoriaId });
         }
       }
-    } catch {
-      desfazer("Não foi possível salvar a categoria. Tente novamente.");
+    } catch (erro) {
+      desfazer(mensagemDeErro(erro, "Não foi possível salvar a categoria. Tente novamente."));
     }
   };
 
@@ -150,14 +172,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     atualizarLocalmente([id], { ignorar_no_fluxo: ignorarNoFluxo });
     try {
       await api.patch(`/api/v1/transacoes/${id}`, { ignorar_no_fluxo: ignorarNoFluxo });
-    } catch {
-      desfazer("Não foi possível salvar a alteração. Tente novamente.");
+    } catch (erro) {
+      desfazer(mensagemDeErro(erro, "Não foi possível salvar a alteração. Tente novamente."));
     }
   };
 
   // Troca a linha editada pela devolvida pelo servidor; se a data saiu do mes exibido, a linha some daqui
   const aplicarLinha = (linha: Transacao) => {
-    const { de, ate } = intervaloDoMes(periodo.ano, periodo.mes);
+    const { de, ate } = intervaloDoPeriodo(periodo);
     const dentroDoMes = linha.data >= de && linha.data <= ate;
     setDadosTransacoes((atual) =>
       atual && {
@@ -197,7 +219,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <button onClick={() => mudarMes(-1)} aria-label="Mês anterior" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="min-w-36 text-center text-sm font-medium capitalize">{nomeDoMes(periodo.ano, periodo.mes)}</span>
+              <span className="min-w-36 text-center leading-tight">
+                <span className="block text-sm font-medium capitalize">{nomeDoMes(periodo.ano, periodo.mes)}</span>
+                <span className="block text-[11px] text-zinc-500">{rotuloPeriodo}</span>
+              </span>
               <button onClick={() => mudarMes(1)} aria-label="Próximo mês" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -228,9 +253,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
         <ResumoCards
           saldoEmConta={contas.saldoEmConta}
-          limiteUsado={contas.limiteUsado}
-          faturas={contas.faturas}
           temContas={contas.temContas}
+          rotuloPeriodo={rotuloPeriodo}
+          compras={compras}
+          destaque={destaque}
+          categoriasDeGasto={categoriasDeGasto}
+          idDestaque={categoriaDestaque?.id ?? null}
+          onTrocarDestaque={trocarDestaque}
           entradas={totais.entradas}
           saidas={totais.saidas}
         />

@@ -83,10 +83,14 @@ depois, ela falha com a mensagem para refazer o passo 2. Ao renovar, confira se 
 
 ## O dashboard (página única)
 
-- **Cards:** saldo em conta, **próxima fatura** do cartão (valor e vencimento informados pelo banco), entradas e saídas do mês.
-  O "limite usado" aparece à parte: nas conexões Open Finance o banco informa o limite utilizado (que inclui parcelas
-  futuras), e isso **não é** a fatura.
-- **Mês:** setas no topo trocam o mês; tudo (cards, gráfico e lista) acompanha.
+- **Período, não mês do calendário:** o "mês" do painel começa no dia 27 do mês anterior. Novembro = 27/10 a 26/11; dezembro =
+  27/11 a 26/12 (o dia 27 já pertence ao período seguinte, então nada conta duas vezes). Ao abrir, ele mostra o período em que
+  hoje cai. Para mudar o dia, defina `VITE_DIA_INICIO_PERIODO` (1 a 28) no Amplify e faça um novo deploy; com `1`, volta ao
+  mês do calendário. Cards, gráfico e lista seguem o período.
+- **Cards:** saldo em conta; **compras no crédito** (soma das compras no cartão de crédito no período, de onde sai o valor da
+  fatura; estornos aparecem à parte e não são descontados); **categoria em destaque** (por padrão "Gastos da Mãe", troca pelo
+  seletor do card e o navegador lembra); entradas e saídas do período.
+  Transações marcadas como "fora do fluxo" não entram em nenhuma soma.
 - **Filtros** (acima do gráfico e da lista): busca na descrição, entradas/saídas, forma (PIX, Débito, Crédito, Outro — pode combinar),
   e categorias (várias de uma vez, incluindo "Sem categoria"). "Limpar filtros" zera tudo. Os filtros permanecem ao trocar de mês.
 - **Gráfico de barras por categoria** (saídas ou entradas): respeita os filtros; clique numa barra, ou na legenda, para filtrar a lista.

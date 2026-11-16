@@ -1,4 +1,4 @@
-import type { Categoria, Conta, Direcao, FaturaCartao, Metodo, Transacao } from "./types";
+import type { Categoria, Conta, Direcao, Metodo, Transacao } from "./types";
 
 export const SEM_CATEGORIA = "__sem_categoria__";
 const COR_SEM_CATEGORIA = "#71717a";
@@ -96,19 +96,52 @@ export function filtrarTransacoes(transacoes: Transacao[], f: Filtros, opcoes: O
   });
 }
 
-// ------------------------- contas e fatura -------------------------
+// ------------------------- somas dos cards -------------------------
+const emCentavos = (v: number) => Math.round(v * 100);
+
+/**
+ * Soma das COMPRAS no cartao de credito no periodo: e daqui que sai "quanto esta a fatura".
+ * Estornos (dinheiro devolvido no cartao) aparecem a parte, nao sao descontados. O que esta marcado como
+ * "fora do fluxo" fica de fora, como em todas as somas do painel.
+ */
+export function comprasNoCredito(transacoes: Transacao[]) {
+  let total = 0;
+  let estornos = 0;
+  let quantidade = 0;
+  for (const t of transacoes) {
+    if (t.metodo !== "CREDITO" || t.ignorar_no_fluxo) continue;
+    if (t.direcao === "SAIDA") {
+      total += emCentavos(t.valor);
+      quantidade += 1;
+    } else {
+      estornos += emCentavos(t.valor);
+    }
+  }
+  return { total: total / 100, estornos: estornos / 100, quantidade };
+}
+
+/** Soma dos gastos (saidas) de UMA categoria no periodo. */
+export function totalDaCategoria(transacoes: Transacao[], categoriaId: string) {
+  let total = 0;
+  let quantidade = 0;
+  for (const t of transacoes) {
+    if (t.ignorar_no_fluxo || t.direcao !== "SAIDA" || t.categoria_id !== categoriaId) continue;
+    total += emCentavos(t.valor);
+    quantidade += 1;
+  }
+  return { total: total / 100, quantidade };
+}
+
+/** Acha a categoria de gasto pelo nome, ignorando acentos e maiusculas ("Gastos da Mae" = "gastos da mãe"). */
+export function categoriaDeGastoPorNome(categorias: Categoria[], nome: string): Categoria | undefined {
+  const alvo = normalizar(nome.trim());
+  return categorias.find((c) => c.tipo === "SAIDA" && normalizar(c.nome.trim()) === alvo);
+}
+
+// ------------------------- contas -------------------------
 export function resumoDeContas(contas: Conta[]) {
-  const soma = (tipos: string[]) =>
-    contas.filter((c) => tipos.includes(c.tipo) && c.saldo !== null).reduce((acc, c) => acc + (c.saldo as number), 0);
-  const faturas: FaturaCartao[] = contas
-    .flatMap((c) => c.proximas_faturas ?? [])
-    .sort((a, b) => a.vencimento.localeCompare(b.vencimento))
-    .slice(0, 2);
-  return {
-    saldoEmConta: soma(["CORRENTE", "POUPANCA"]),
-    /** Para o cartao, o banco informa o LIMITE UTILIZADO (inclui parcelas futuras), nao a fatura. */
-    limiteUsado: soma(["CARTAO_CREDITO"]),
-    faturas,
-    temContas: contas.length > 0,
-  };
+  const saldoEmConta = contas
+    .filter((c) => (c.tipo === "CORRENTE" || c.tipo === "POUPANCA") && c.saldo !== null)
+    .reduce((acc, c) => acc + (c.saldo as number), 0);
+  return { saldoEmConta, temContas: contas.length > 0 };
 }
