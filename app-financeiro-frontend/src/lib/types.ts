@@ -76,3 +76,13 @@ export interface StatusSincronizacao {
     dias_para_expirar: number | null;
   }[];
 }
+
+/** Entrada esperada ou saida prevista de um periodo. `concluida` = ja recebida/paga (ja esta no saldo). */
+export interface Previsao {
+  id: string;
+  periodo: string;
+  tipo: Direcao;
+  descricao: string;
+  valor: number;
+  concluida: boolean;
+}

@@ -140,11 +140,17 @@ export default function FiltrosTransacoes({ filtros, onChange, categorias, mapaC
         {filtros.mostrarIgnoradas ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} Fora do fluxo
       </button>
 
-      {ativos > 0 && (
-        <button onClick={() => onChange(FILTROS_VAZIOS)} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-zinc-400 transition-colors hover:text-zinc-100">
-          <X className="h-4 w-4" /> Limpar filtros ({ativos})
-        </button>
-      )}
+      {/* Sempre ocupa o mesmo espaco (so fica invisivel sem filtros): assim a barra nunca muda de tamanho nem empurra a busca */}
+      <button
+        onClick={() => onChange(FILTROS_VAZIOS)}
+        disabled={ativos === 0}
+        tabIndex={ativos === 0 ? -1 : 0}
+        aria-hidden={ativos === 0}
+        title="Limpar todos os filtros"
+        className={`flex h-8 w-[84px] shrink-0 items-center justify-center gap-1 rounded-md text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 ${ativos === 0 ? "invisible" : ""}`}
+      >
+        <X className="h-3.5 w-3.5" /> Limpar ({ativos})
+      </button>
     </section>
   );
 }

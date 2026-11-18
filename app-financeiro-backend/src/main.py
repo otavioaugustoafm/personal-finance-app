@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.config import ALLOWED_ORIGINS, validar_config_api
-from src.routes import auth, categorias, contas, sincronizacao, transacoes
+from src.routes import auth, categorias, contas, previsoes, sincronizacao, transacoes
 
 validar_config_api()
 
@@ -20,6 +20,7 @@ app.include_router(auth.router)
 app.include_router(categorias.router)
 app.include_router(contas.router)
 app.include_router(transacoes.router)
+app.include_router(previsoes.router)
 app.include_router(sincronizacao.router)
 
 

@@ -3,17 +3,18 @@ import { ChevronLeft, ChevronRight, LogOut, Tags } from "lucide-react";
 import { api, mensagemDeErro } from "../lib/api";
 import {
   FILTROS_VAZIOS, SEM_CATEGORIA, categoriaDeGastoPorNome, comprasNoCredito, contarFiltrosAtivos, filtrarTransacoes,
-  gastosPorCategoria, mapaDeCategorias, resumoDeContas, totaisDoMes, totalDaCategoria, type Filtros,
+  gastosPorCategoria, mapaDeCategorias, resumoDeContas, saldoPresumido, totaisDoMes, totalDaCategoria, type Filtros,
 } from "../lib/calculos";
 import { nomeDoMes } from "../lib/format";
-import { intervaloDoPeriodo, periodoDeHoje, rotuloDoIntervalo, somarMeses, type Periodo } from "../lib/periodo";
-import type { Categoria, Conta, Direcao, StatusSincronizacao, Transacao } from "../lib/types";
+import { chaveDoPeriodo, intervaloDoPeriodo, periodoDeHoje, rotuloDoIntervalo, somarMeses, type Periodo } from "../lib/periodo";
+import type { Categoria, Conta, Direcao, Previsao, StatusSincronizacao, Transacao } from "../lib/types";
 import AvisosSincronizacao from "./AvisosSincronizacao";
 import CategoriasModal from "./CategoriasModal";
 import EditarTransacaoModal from "./EditarTransacaoModal";
 import FiltrosTransacoes from "./FiltrosTransacoes";
 import GastosPorCategoria from "./GastosPorCategoria";
 import ListaTransacoes from "./ListaTransacoes";
+import PrevisoesModal from "./PrevisoesModal";
 import ResumoCards from "./ResumoCards";
 
 interface DashboardProps {
@@ -52,9 +53,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [tipoGrafico, setTipoGrafico] = useState<Direcao>("SAIDA");
   const [editando, setEditando] = useState<Transacao | null>(null);
   const [modalCategorias, setModalCategorias] = useState(false);
+  const [modalPrevisoes, setModalPrevisoes] = useState(false);
+  const [dadosPrevisoes, setDadosPrevisoes] = useState<{ chave: string; previsoes: Previsao[] } | null>(null);
+  const [previsoesIndisponiveis, setPrevisoesIndisponiveis] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const chave = `${periodo.ano}-${periodo.mes}-${versaoTransacoes}`;
+  const chavePeriodo = chaveDoPeriodo(periodo);
 
   // Categorias, contas e status da sincronizacao (recarrega depois de editar categorias)
   useEffect(() => {
@@ -91,10 +96,25 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     };
   }, [chave, periodo]);
 
+  // Previsoes (entradas esperadas / saidas previstas) do periodo escolhido
+  useEffect(() => {
+    let ativo = true;
+    api
+      .get("/api/v1/previsoes", { params: { periodo: chavePeriodo } })
+      .then((res) => {
+        if (!ativo) return;
+        setPrevisoesIndisponiveis(false);
+        setDadosPrevisoes({ chave: chavePeriodo, previsoes: res.data.previsoes });
+      })
+      .catch(() => ativo && setPrevisoesIndisponiveis(true)); // so o saldo presumido fica indisponivel; o resto do painel segue
+    return () => {
+      ativo = false;
+    };
+  }, [chavePeriodo]);
+
   const carregando = dadosTransacoes?.chave !== chave;
   const transacoes = useMemo(() => (carregando ? [] : (dadosTransacoes?.transacoes ?? [])), [carregando, dadosTransacoes]);
   const mapa = useMemo(() => mapaDeCategorias(base?.categorias ?? []), [base?.categorias]);
-  const totais = useMemo(() => totaisDoMes(transacoes), [transacoes]); // cards: mes inteiro, sem filtros
   const filtradas = useMemo(() => filtrarTransacoes(transacoes, filtros), [transacoes, filtros]);
   const totaisFiltro = useMemo(() => totaisDoMes(filtradas), [filtradas]);
   // o grafico respeita busca, forma e "fora do fluxo", mas mostra todas as categorias (e o tipo e escolhido nele)
@@ -119,6 +139,44 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     () => (categoriaDestaque ? { nome: categoriaDestaque.nome, ...totalDaCategoria(transacoes, categoriaDestaque.id) } : null),
     [categoriaDestaque, transacoes],
   );
+
+  const previsoes = useMemo(() => (dadosPrevisoes?.chave === chavePeriodo ? dadosPrevisoes.previsoes : []), [dadosPrevisoes, chavePeriodo]);
+  const carregandoPrevisoes = !previsoesIndisponiveis && dadosPrevisoes?.chave !== chavePeriodo;
+  const presumido = useMemo(() => saldoPresumido(contas.saldoEmConta, compras.total, previsoes), [contas.saldoEmConta, compras.total, previsoes]);
+  const tituloPrevisoes = `${nomeDoMes(periodo.ano, periodo.mes)} · ${rotuloPeriodo}`;
+
+  // Previsoes: cada acao devolve null (deu certo) ou a mensagem de erro; a lista local acompanha a resposta da API
+  const ordenarPrevisoes = (lista: Previsao[]) => [...lista].sort((a, b) => Number(a.concluida) - Number(b.concluida)); // concluidas no fim
+  const trocarPrevisoes = (mudar: (lista: Previsao[]) => Previsao[]) =>
+    setDadosPrevisoes((atual) => atual && { ...atual, previsoes: ordenarPrevisoes(mudar(atual.previsoes)) });
+
+  const criarPrevisao = async (dados: { tipo: Direcao; descricao: string; valor: string }): Promise<string | null> => {
+    try {
+      const res = await api.post("/api/v1/previsoes", { ...dados, periodo: chavePeriodo });
+      trocarPrevisoes((lista) => [...lista, res.data as Previsao]);
+      return null;
+    } catch (e) {
+      return mensagemDeErro(e);
+    }
+  };
+  const atualizarPrevisao = async (id: string, mudancas: { descricao?: string; valor?: string; concluida?: boolean }): Promise<string | null> => {
+    try {
+      const res = await api.patch(`/api/v1/previsoes/${id}`, mudancas);
+      trocarPrevisoes((lista) => lista.map((p) => (p.id === id ? (res.data as Previsao) : p)));
+      return null;
+    } catch (e) {
+      return mensagemDeErro(e);
+    }
+  };
+  const excluirPrevisao = async (id: string): Promise<string | null> => {
+    try {
+      await api.delete(`/api/v1/previsoes/${id}`);
+      trocarPrevisoes((lista) => lista.filter((p) => p.id !== id));
+      return null;
+    } catch (e) {
+      return mensagemDeErro(e);
+    }
+  };
 
   const trocarDestaque = (id: string) => {
     setIdDestaqueSalvo(id);
@@ -220,7 +278,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="min-w-36 text-center leading-tight">
-                <span className="block text-sm font-medium capitalize">{nomeDoMes(periodo.ano, periodo.mes)}</span>
+                <span className="block text-sm font-medium first-letter:uppercase">{nomeDoMes(periodo.ano, periodo.mes)}</span>
                 <span className="block text-[11px] text-zinc-500">{rotuloPeriodo}</span>
               </span>
               <button onClick={() => mudarMes(1)} aria-label="Próximo mês" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
@@ -252,16 +310,23 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         {base && <AvisosSincronizacao status={base.status} desatualizado={base.desatualizado} />}
 
         <ResumoCards
+          carregando={carregando || carregandoPrevisoes}
           saldoEmConta={contas.saldoEmConta}
           temContas={contas.temContas}
           rotuloPeriodo={rotuloPeriodo}
           compras={compras}
+          presumido={{
+            aReceber: presumido.aReceber,
+            aPagar: presumido.aPagar,
+            valor: presumido.presumido,
+            pendentes: previsoes.filter((p) => !p.concluida).length,
+            indisponivel: previsoesIndisponiveis,
+          }}
+          onAbrirPrevisoes={() => setModalPrevisoes(true)}
           destaque={destaque}
           categoriasDeGasto={categoriasDeGasto}
           idDestaque={categoriaDestaque?.id ?? null}
           onTrocarDestaque={trocarDestaque}
-          entradas={totais.entradas}
-          saidas={totais.saidas}
         />
 
         <FiltrosTransacoes filtros={filtros} onChange={setFiltros} categorias={base?.categorias ?? []} mapaCategorias={mapa} />
@@ -297,6 +362,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           onClose={() => setEditando(null)}
           onSalvar={salvarEdicao}
           onRestaurar={restaurarEdicao}
+        />
+      )}
+
+      {modalPrevisoes && !previsoesIndisponiveis && (
+        <PrevisoesModal
+          tituloPeriodo={tituloPrevisoes}
+          previsoes={previsoes}
+          resumo={{ saldoEmConta: contas.saldoEmConta, aReceber: presumido.aReceber, aPagar: presumido.aPagar, faturaAtual: compras.total, presumido: presumido.presumido }}
+          onClose={() => setModalPrevisoes(false)}
+          onCriar={criarPrevisao}
+          onAtualizar={atualizarPrevisao}
+          onExcluir={excluirPrevisao}
         />
       )}
 

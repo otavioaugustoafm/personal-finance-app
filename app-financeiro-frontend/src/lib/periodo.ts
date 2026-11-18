@@ -40,3 +40,8 @@ export function periodoDeHoje(hoje: Date, diaInicio = DIA_INICIO_PERIODO): Perio
 export function rotuloDoIntervalo(de: string, ate: string): string {
   return `${diaMes(de)} a ${diaMes(ate)}`;
 }
+
+/** "2026-11": identifica o periodo (o mes em que ele TERMINA) nas previsoes salvas na API. */
+export function chaveDoPeriodo({ ano, mes }: Periodo): string {
+  return `${ano}-${dois(mes)}`;
+}

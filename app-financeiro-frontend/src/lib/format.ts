@@ -21,3 +21,10 @@ export function dataCompleta(data: string): string {
   const [ano, mes, dia] = data.split("-");
   return `${dia}/${mes}/${ano}`;
 }
+
+/** Aceita "55,90", "55.90", "R$ 1.234,56". Devolve "1234.56" (texto, sem erro de ponto flutuante) ou null se invalido ou <= 0. */
+export function lerValorBR(texto: string): string | null {
+  const t = texto.trim().replace(/^R\$\s*/, "");
+  const normal = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  return /^\d+(\.\d{1,2})?$/.test(normal) && Number(normal) > 0 ? normal : null;
+}

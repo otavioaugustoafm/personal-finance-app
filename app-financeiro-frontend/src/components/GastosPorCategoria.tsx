@@ -1,4 +1,3 @@
-import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SEM_CATEGORIA, type GastoPorCategoria } from "../lib/calculos";
 import { moeda } from "../lib/format";
 import type { Direcao } from "../lib/types";
@@ -11,15 +10,17 @@ interface Props {
   onAlternar: (chave: string) => void;
 }
 
+/** Barras horizontais em HTML/CSS: nomes inteiros, valor e % ao lado, e uma faixa com a proporcao de cada categoria. */
 export default function GastosPorCategoria({ gastos, tipo, onTipo, selecionadas, onAlternar }: Props) {
   const total = gastos.reduce((acc, g) => acc + g.total, 0);
-  const altura = Math.max(120, gastos.length * 38 + 16);
-  const apagada = (chave: string) => selecionadas.length > 0 && !selecionadas.includes(chave);
+  const maior = gastos[0]?.total ?? 0;
+  const filtrando = selecionadas.length > 0;
+  const nomeDoTipo = tipo === "SAIDA" ? "Gastos" : "Entradas";
 
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-zinc-200">{tipo === "SAIDA" ? "Gastos" : "Entradas"} por categoria</h2>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-200">{nomeDoTipo} por categoria</h2>
         <div className="flex overflow-hidden rounded-lg border border-zinc-700 text-xs" role="group" aria-label="Tipo do gráfico">
           {(["SAIDA", "ENTRADA"] as const).map((t) => (
             <button key={t} onClick={() => onTipo(t)} aria-pressed={tipo === t} className={`px-2.5 py-1 transition-colors ${tipo === t ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800"}`}>
@@ -30,53 +31,58 @@ export default function GastosPorCategoria({ gastos, tipo, onTipo, selecionadas,
       </div>
 
       {gastos.length === 0 ? (
-        <p className="py-6 text-center text-sm text-zinc-500">Nada para mostrar com os filtros atuais.</p>
+        <p className="py-8 text-center text-sm text-zinc-500">Nada para mostrar com os filtros atuais.</p>
       ) : (
         <>
-          <div style={{ height: altura }} role="img" aria-label={`Gráfico de barras: ${tipo === "SAIDA" ? "gastos" : "entradas"} por categoria`}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={gastos} layout="vertical" margin={{ top: 0, right: 72, bottom: 0, left: 0 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="nome" width={104} tick={{ fill: "#a1a1aa", fontSize: 12 }} axisLine={false} tickLine={false} interval={0} />
-                <Tooltip
-                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                  formatter={(valor) => moeda(Number(valor))}
-                  contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8, color: "#e4e4e7", fontSize: 12 }}
-                  itemStyle={{ color: "#e4e4e7" }}
-                  labelStyle={{ color: "#a1a1aa" }}
-                />
-                <Bar dataKey="total" radius={[0, 6, 6, 0]} barSize={20} cursor="pointer" onClick={(_dados, indice) => onAlternar(gastos[indice].chave)}>
-                  {gastos.map((g) => (
-                    <Cell key={g.chave} fill={g.cor} fillOpacity={apagada(g.chave) ? 0.3 : 1} />
-                  ))}
-                  <LabelList dataKey="total" position="right" formatter={(valor) => moeda(Number(valor))} fill="#d4d4d8" fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mb-3">
+            <div className="text-2xl font-semibold tabular-nums text-zinc-100">{moeda(total)}</div>
+            <div className="text-xs text-zinc-500">{gastos.length} categoria(s) no período</div>
           </div>
 
-          {/* Legenda em texto: valores exatos e atalho para filtrar (tambem acessivel por teclado) */}
-          <ul className="mt-3 space-y-0.5 border-t border-zinc-800 pt-2">
+          {/* faixa de proporcao: todas as categorias lado a lado */}
+          <div className="mb-4 flex h-2.5 w-full overflow-hidden rounded-full bg-zinc-800" role="img" aria-label={`Proporção de ${nomeDoTipo.toLowerCase()} por categoria`}>
             {gastos.map((g) => (
-              <li key={g.chave}>
-                <button
-                  onClick={() => onAlternar(g.chave)}
-                  aria-pressed={selecionadas.includes(g.chave)}
-                  title={selecionadas.includes(g.chave) ? "Clique para remover do filtro" : "Clique para filtrar a lista"}
-                  className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-zinc-800/60 ${selecionadas.includes(g.chave) ? "bg-zinc-800" : ""}`}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: g.cor }} />
-                    <span className={`truncate ${g.chave === SEM_CATEGORIA ? "italic text-zinc-400" : "text-zinc-200"}`}>
-                      {g.nome} <span className="text-xs text-zinc-500">({g.quantidade})</span>
-                    </span>
-                  </span>
-                  <span className="shrink-0 tabular-nums text-zinc-300">
-                    {moeda(g.total)} <span className="text-xs text-zinc-500">{total > 0 ? Math.round((g.total / total) * 100) : 0}%</span>
-                  </span>
-                </button>
-              </li>
+              <div
+                key={g.chave}
+                title={`${g.nome}: ${moeda(g.total)}`}
+                className="h-full transition-opacity"
+                style={{ width: `${(g.total / total) * 100}%`, backgroundColor: g.cor, opacity: filtrando && !selecionadas.includes(g.chave) ? 0.25 : 1 }}
+              />
             ))}
+          </div>
+
+          <ul className="space-y-1">
+            {gastos.map((g) => {
+              const ativa = selecionadas.includes(g.chave);
+              return (
+                <li key={g.chave}>
+                  <button
+                    onClick={() => onAlternar(g.chave)}
+                    aria-pressed={ativa}
+                    title={ativa ? "Clique para remover do filtro" : "Clique para filtrar a lista"}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-left transition-all hover:bg-zinc-800/60 ${ativa ? "bg-zinc-800 ring-1 ring-zinc-600" : ""} ${filtrando && !ativa ? "opacity-50" : ""}`}
+                  >
+                    <div className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: g.cor }} />
+                        <span className={`truncate ${g.chave === SEM_CATEGORIA ? "italic text-zinc-400" : "text-zinc-200"}`}>{g.nome}</span>
+                        <span className="shrink-0 text-xs text-zinc-500">({g.quantidade})</span>
+                      </span>
+                      <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
+                        <span className="text-zinc-200">{moeda(g.total)}</span>
+                        <span className="w-9 text-right text-xs text-zinc-500">{total > 0 ? Math.round((g.total / total) * 100) : 0}%</span>
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-800">
+                      <div
+                        className="h-full rounded-full transition-[width] duration-500"
+                        style={{ width: `${maior > 0 ? Math.max((g.total / maior) * 100, 2) : 0}%`, background: `linear-gradient(90deg, ${g.cor}99, ${g.cor})` }}
+                      />
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}

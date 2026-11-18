@@ -1,8 +1,8 @@
-import type { Categoria, Conta, Direcao, Metodo, Transacao } from "./types";
+import type { Categoria, Conta, Direcao, Metodo, Previsao, Transacao } from "./types";
 
 export const SEM_CATEGORIA = "__sem_categoria__";
 const COR_SEM_CATEGORIA = "#71717a";
-const PALETA = ["#10b981", "#f43f5e", "#3b82f6", "#f59e0b", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#14b8a6"];
+export const PALETA_CATEGORIAS = ["#10b981", "#f43f5e", "#3b82f6", "#f59e0b", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#14b8a6"];
 
 export interface InfoCategoria {
   nome: string;
@@ -12,7 +12,7 @@ export interface InfoCategoria {
 /** Cor escolhida pelo usuario; se nao houver, uma da paleta (estavel pela ordem alfabetica). */
 export function mapaDeCategorias(categorias: Categoria[]): Map<string, InfoCategoria> {
   const ordenadas = [...categorias].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  return new Map(ordenadas.map((c, i) => [c.id, { nome: c.nome, cor: c.cor ?? PALETA[i % PALETA.length] }]));
+  return new Map(ordenadas.map((c, i) => [c.id, { nome: c.nome, cor: c.cor ?? PALETA_CATEGORIAS[i % PALETA_CATEGORIAS.length] }]));
 }
 
 export function totaisDoMes(transacoes: Transacao[]) {
@@ -136,6 +136,55 @@ export function totalDaCategoria(transacoes: Transacao[], categoriaId: string) {
 export function categoriaDeGastoPorNome(categorias: Categoria[], nome: string): Categoria | undefined {
   const alvo = normalizar(nome.trim());
   return categorias.find((c) => c.tipo === "SAIDA" && normalizar(c.nome.trim()) === alvo);
+}
+
+// ------------------------- saldo presumido -------------------------
+/**
+ * Saldo presumido = saldo em conta + entradas esperadas - saidas previstas - fatura atual.
+ * Previsoes marcadas como concluidas (ja recebidas/pagas) ficam de fora: elas ja estao refletidas no saldo.
+ */
+export function saldoPresumido(saldoEmConta: number, faturaAtual: number, previsoes: Previsao[]) {
+  let entradas = 0;
+  let saidas = 0;
+  for (const p of previsoes) {
+    if (p.concluida) continue;
+    if (p.tipo === "ENTRADA") entradas += emCentavos(p.valor);
+    else saidas += emCentavos(p.valor);
+  }
+  const aReceber = entradas / 100;
+  const aPagar = saidas / 100;
+  return { aReceber, aPagar, presumido: (emCentavos(saldoEmConta) + entradas - saidas - emCentavos(faturaAtual)) / 100 };
+}
+
+// ------------------------- cores das categorias -------------------------
+const mesmaCor = (a: string | null, b: string | null) => (a ?? "").toLowerCase() === (b ?? "").toLowerCase();
+
+/** Primeira cor da paleta que nenhuma categoria usa (se todas estiverem em uso, volta ao comeco). */
+export function corNaoUsada(categorias: { cor: string | null }[]): string {
+  const livre = PALETA_CATEGORIAS.find((cor) => !categorias.some((c) => mesmaCor(c.cor, cor)));
+  return livre ?? PALETA_CATEGORIAS[categorias.length % PALETA_CATEGORIAS.length];
+}
+
+/**
+ * Categorias que repetem a cor de outra (ou nao tem cor) recebem cores livres da paleta.
+ * A primeira de cada cor (em ordem alfabetica) a mantem, e quem ja tem cor propria e unica nao e tocado:
+ * as cores mantidas sao reservadas ANTES de escolher as novas, para nunca tomar a cor de uma categoria mais adiante.
+ */
+export function corrigirCoresRepetidas(categorias: Categoria[]): { id: string; cor: string }[] {
+  const ordenadas = [...categorias].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const mantidas = new Set<string>();
+  const aMudar: Categoria[] = [];
+  for (const c of ordenadas) {
+    const cor = c.cor?.toLowerCase();
+    if (cor && !mantidas.has(cor)) mantidas.add(cor);
+    else aMudar.push(c);
+  }
+  const emUso: { cor: string | null }[] = [...mantidas].map((cor) => ({ cor }));
+  return aMudar.map((c) => {
+    const nova = corNaoUsada(emUso);
+    emUso.push({ cor: nova });
+    return { id: c.id, cor: nova };
+  });
 }
 
 // ------------------------- contas -------------------------

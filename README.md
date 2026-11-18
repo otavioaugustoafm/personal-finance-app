@@ -30,9 +30,10 @@ O passo a passo completo (GitHub, Neon, Lambda, API Gateway, agendamento e Ampli
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/001_schema_open_finance.sql
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/002_ajustes_sincronizacao.sql
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/003_edicao_e_faturas.sql
+   psql "$DATABASE_URL" -f app-financeiro-backend/migrations/004_previsoes.sql
    ```
    (Sem `psql`: cole o conteúdo de cada arquivo, na ordem, no **SQL Editor** do Neon.
-   Se você já rodou o 001 e o 002, rode só o 003.)
+   Se você já rodou o 001, 002 e 003, rode só o 004.)
 
 ### 2. Backend
 
@@ -87,10 +88,13 @@ depois, ela falha com a mensagem para refazer o passo 2. Ao renovar, confira se 
   27/11 a 26/12 (o dia 27 já pertence ao período seguinte, então nada conta duas vezes). Ao abrir, ele mostra o período em que
   hoje cai. Para mudar o dia, defina `VITE_DIA_INICIO_PERIODO` (1 a 28) no Amplify e faça um novo deploy; com `1`, volta ao
   mês do calendário. Cards, gráfico e lista seguem o período.
-- **Cards:** saldo em conta; **compras no crédito** (soma das compras no cartão de crédito no período, de onde sai o valor da
-  fatura; estornos aparecem à parte e não são descontados); **categoria em destaque** (por padrão "Gastos da Mãe", troca pelo
-  seletor do card e o navegador lembra); entradas e saídas do período.
+- **Cards:** **saldo em conta**; **fatura atual** (soma das compras no cartão de crédito no período; estornos aparecem à parte e
+  não são descontados); **saldo presumido** = saldo + entradas esperadas − saídas previstas − fatura atual; e a **categoria em
+  destaque** (por padrão "Gastos da Mãe"; troca pelo seletor do card e o navegador lembra).
   Transações marcadas como "fora do fluxo" não entram em nenhuma soma.
+- **Previsões** (botão no card de saldo presumido): você anota o que espera **receber** (salário, reembolso...) e o que prevê
+  **pagar** (aluguel, boleto...) no período. Quando o dinheiro chegar ou o pagamento sair, marque a caixa: aquele valor já está
+  no saldo e deixa de somar, para não contar duas vezes. Cada período tem as suas previsões; dá para editar e excluir.
 - **Filtros** (acima do gráfico e da lista): busca na descrição, entradas/saídas, forma (PIX, Débito, Crédito, Outro — pode combinar),
   e categorias (várias de uma vez, incluindo "Sem categoria"). "Limpar filtros" zera tudo. Os filtros permanecem ao trocar de mês.
 - **Gráfico de barras por categoria** (saídas ou entradas): respeita os filtros; clique numa barra, ou na legenda, para filtrar a lista.
@@ -100,7 +104,8 @@ depois, ela falha com a mensagem para refazer o passo 2. Ao renovar, confira se 
 - **Lista de transações:** escolha a categoria no próprio item (salva na hora). Marque várias e use "Aplicar" para categorizar em lote.
 - **Fora do fluxo (olho):** tira a transação dos totais, como pagamento de fatura. Dá para desfazer.
 - **Avisos:** sincronização com erro ou desatualizada (+36h) e autorização do Meu Pluggy perto de expirar.
-- **Categorias:** botão no topo, agora com cor (a cor aparece no gráfico e na lista).
+- **Categorias:** botão no topo. Cada categoria nova nasce com uma cor diferente; clique na bolinha para trocar. Se houver categorias
+  com a mesma cor, um botão dá cores diferentes só às repetidas.
 
 ## Como funciona o login
 
@@ -118,6 +123,8 @@ então você só digita a senha uma vez por semana. Quem acessar o domínio sem 
 | POST | `/api/v1/transacoes/categorizar-em-lote` | `{ "ids": [uuid, ...], "categoria_id": uuid\|null }` (até 500) |
 | PATCH | `/api/v1/transacoes/{id}` | edita qualquer campo (só o que for enviado muda): `descricao`, `data`, `valor`, `direcao`, `metodo`, `parcela_atual`, `total_parcelas`, `categoria_id`, `ignorar_no_fluxo` |
 | POST | `/api/v1/transacoes/{id}/restaurar` | volta descrição, data, valor, tipo, forma e parcelas ao que o banco informou |
+| GET/POST | `/api/v1/previsoes` | lista (`?periodo=2026-11`) / cria entradas esperadas e saídas previstas |
+| PATCH/DELETE | `/api/v1/previsoes/{id}` | edita (`descricao`, `valor`, `tipo`, `concluida`) / exclui |
 | GET | `/api/v1/sincronizacao/status` | última sincronização e validade da autorização do Meu Pluggy |
 | GET/POST | `/api/v1/categorias` | lista / cria (`nome`, `tipo` = ENTRADA\|SAIDA, `cor` opcional) |
 | PUT/DELETE | `/api/v1/categorias/{id}` | renomeia / exclui (transações ficam sem categoria) |

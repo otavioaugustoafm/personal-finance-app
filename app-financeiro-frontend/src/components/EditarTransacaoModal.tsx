@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { RotateCcw, X } from "lucide-react";
-import { dataCompleta, moeda } from "../lib/format";
+import { dataCompleta, lerValorBR, moeda } from "../lib/format";
 import type { Categoria, Direcao, Metodo, Transacao } from "../lib/types";
 
 interface Props {
@@ -14,13 +14,6 @@ interface Props {
 
 const ROTULO_METODO: Record<Metodo, string> = { PIX: "PIX", DEBITO: "Débito", CREDITO: "Crédito", OUTRO: "Outro" };
 const CAMPO = "w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500";
-
-/** Aceita "55,90", "55.90" e "1.234,56". Devolve "1234.56" ou null se invalido. */
-function lerValor(texto: string): string | null {
-  const t = texto.trim().replace(/^R\$\s*/, "");
-  const normal = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
-  return /^\d+(\.\d{1,2})?$/.test(normal) && Number(normal) > 0 ? normal : null;
-}
 
 function lerParcela(texto: string): number | null | "invalido" {
   if (texto.trim() === "") return null;
@@ -65,7 +58,7 @@ export default function EditarTransacaoModal({ transacao: t, categorias, onClose
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     const desc = descricao.trim();
-    const v = lerValor(valor);
+    const v = lerValorBR(valor);
     const pa = lerParcela(parcelaAtual);
     const tp = lerParcela(totalParcelas);
     if (!desc) return setErro("A descrição não pode ficar vazia.");
