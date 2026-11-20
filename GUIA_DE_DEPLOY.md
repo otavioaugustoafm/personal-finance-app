@@ -57,7 +57,8 @@ git push -u origin main
 3. Cole e execute `app-financeiro-backend/migrations/002_ajustes_sincronizacao.sql`. (Sempre nessa ordem.)
 4. Cole e execute `app-financeiro-backend/migrations/003_edicao_e_faturas.sql`.
 5. Cole e execute `app-financeiro-backend/migrations/004_previsoes.sql`.
-6. Clique em **Connect** e copie a string de conexão **com "Connection pooling" ligado** (o host contém `-pooler`).
+6. Cole e execute `app-financeiro-backend/migrations/005_previsao_por_categoria.sql`.
+7. Clique em **Connect** e copie a string de conexão **com "Connection pooling" ligado** (o host contém `-pooler`).
    Essa é a `DATABASE_URL`.
 
 ---

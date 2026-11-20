@@ -32,7 +32,10 @@ function rotuloDoDia(data: string): string {
   const diferenca = Math.round((hoje.getTime() - dia.getTime()) / 86_400_000);
   if (diferenca === 0) return "Hoje";
   if (diferenca === 1) return "Ontem";
-  return new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "numeric", month: "short" }).format(dia);
+  // "segunda, 16 de nov." — o dia da semana por extenso é mais fácil de achar passando o olho
+  const semana = new Intl.DateTimeFormat("pt-BR", { weekday: "long" }).format(dia).replace("-feira", "");
+  const diaEMes = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" }).format(dia);
+  return `${semana}, ${diaEMes}`;
 }
 
 /** Select de categoria: as categorias do mesmo tipo da transacao aparecem primeiro. */
@@ -163,8 +166,10 @@ export default function ListaTransacoes({
 
           {grupos.map((g) => (
             <div key={g.data}>
-              <div className="sticky top-[calc(env(safe-area-inset-top)+4rem)] z-10 border-y border-borda bg-painel/95 px-4 py-1.5 text-xs font-medium text-suave backdrop-blur first-letter:uppercase">
-                {rotuloDoDia(g.data)} <span className="font-normal text-apagado">· {diaMes(g.data)}</span>
+              <div className="sticky top-[calc(env(safe-area-inset-top)+4rem)] z-10 flex items-baseline gap-2 border-y border-borda bg-painel-2/95 px-4 py-2.5 backdrop-blur">
+                <span className="font-display text-base font-semibold tracking-tight text-texto first-letter:uppercase">{rotuloDoDia(g.data)}</span>
+                {/* "Hoje" e "Ontem" ganham a data ao lado; os outros dias já trazem o dia no rótulo */}
+                {["Hoje", "Ontem"].includes(rotuloDoDia(g.data)) && <span className="text-sm text-apagado">{diaMes(g.data)}</span>}
               </div>
               <ul>
                 {g.itens.map((t) => {

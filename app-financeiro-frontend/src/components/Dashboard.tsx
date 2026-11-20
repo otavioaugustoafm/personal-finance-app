@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, LogOut, Tags } from "lucide-react";
 import { api, mensagemDeErro } from "../lib/api";
 import {
-  FILTROS_VAZIOS, SEM_CATEGORIA, categoriaDeGastoPorNome, comprasNoCredito, contarFiltrosAtivos, filtrarTransacoes,
+  FILTROS_VAZIOS, SEM_CATEGORIA, calcularPrevisoes, categoriaDeGastoPorNome, comprasNoCredito, contarFiltrosAtivos, filtrarTransacoes,
   gastosPorCategoria, mapaDeCategorias, resumoDeContas, saldoPresumido, totaisDoMes, totalDaCategoria, type Filtros,
 } from "../lib/calculos";
 import { nomeDoMes } from "../lib/format";
@@ -142,7 +142,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const previsoes = useMemo(() => (dadosPrevisoes?.chave === chavePeriodo ? dadosPrevisoes.previsoes : []), [dadosPrevisoes, chavePeriodo]);
   const carregandoPrevisoes = !previsoesIndisponiveis && dadosPrevisoes?.chave !== chavePeriodo;
-  const presumido = useMemo(() => saldoPresumido(contas.saldoEmConta, compras.total, previsoes), [contas.saldoEmConta, compras.total, previsoes]);
+  // previsoes ligadas a uma categoria acompanham o total dela no periodo (sobem a cada novo gasto)
+  const previsoesCalculadas = useMemo(() => calcularPrevisoes(previsoes, transacoes, base?.categorias ?? []), [previsoes, transacoes, base?.categorias]);
+  const presumido = useMemo(
+    () => saldoPresumido(contas.saldoEmConta, compras.total, previsoesCalculadas),
+    [contas.saldoEmConta, compras.total, previsoesCalculadas],
+  );
   const tituloPrevisoes = `${nomeDoMes(periodo.ano, periodo.mes)} · ${rotuloPeriodo}`;
 
   // Previsoes: cada acao devolve null (deu certo) ou a mensagem de erro; a lista local acompanha a resposta da API
@@ -150,7 +155,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const trocarPrevisoes = (mudar: (lista: Previsao[]) => Previsao[]) =>
     setDadosPrevisoes((atual) => atual && { ...atual, previsoes: ordenarPrevisoes(mudar(atual.previsoes)) });
 
-  const criarPrevisao = async (dados: { tipo: Direcao; descricao: string; valor: string }): Promise<string | null> => {
+  const criarPrevisao = async (dados: { tipo: Direcao; descricao: string; valor: string | null; categoria_id: string | null }): Promise<string | null> => {
     try {
       const res = await api.post("/api/v1/previsoes", { ...dados, periodo: chavePeriodo });
       trocarPrevisoes((lista) => [...lista, res.data as Previsao]);
@@ -382,7 +387,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       {modalPrevisoes && !previsoesIndisponiveis && (
         <PrevisoesModal
           tituloPeriodo={tituloPrevisoes}
-          previsoes={previsoes}
+          previsoes={previsoesCalculadas}
+          categorias={base?.categorias ?? []}
+          mapaCategorias={mapa}
           resumo={{ saldoEmConta: contas.saldoEmConta, aReceber: presumido.aReceber, aPagar: presumido.aPagar, faturaAtual: compras.total, presumido: presumido.presumido }}
           onClose={() => setModalPrevisoes(false)}
           onCriar={criarPrevisao}

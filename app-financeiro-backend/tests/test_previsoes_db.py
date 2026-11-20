@@ -82,3 +82,33 @@ def test_validacoes(api):
     assert api.get("/api/v1/previsoes?periodo=lixo").status_code == 422
     assert api.get("/api/v1/previsoes").status_code == 422
     assert float(api.get(f"/api/v1/previsoes?periodo={PERIODO}").json()["previsoes"][0]["valor"]) == 3000.0  # nada foi alterado
+
+
+def _categoria(api, nome="Gastos da Mae"):
+    r = api.post("/api/v1/categorias", json={"nome": nome, "tipo": "SAIDA"})
+    assert r.status_code in (200, 201), r.text
+    return r.json()["id"] if "id" in r.json() else api.get("/api/v1/categorias").json()["categorias"][0]["id"]
+
+
+def test_previsao_ligada_a_categoria_tem_valor_automatico(api):
+    cat = _categoria(api)
+    p = criar(api, descricao="Estorno da mae", valor=None, categoria_id=cat)
+    assert p["categoria_id"] == cat and p["valor"] is None
+    comum = criar(api)
+    assert comum["categoria_id"] is None
+    # nao aceita valor fixo junto com categoria, nem nenhum dos dois
+    base = {"periodo": PERIODO, "tipo": "ENTRADA", "descricao": "x"}
+    assert api.post("/api/v1/previsoes", json={**base, "valor": "10", "categoria_id": cat}).status_code == 422
+    assert api.post("/api/v1/previsoes", json=base).status_code == 422
+    assert api.post("/api/v1/previsoes", json={**base, "categoria_id": "11111111-1111-1111-1111-111111111111"}).status_code == 422
+    assert api.patch(f"/api/v1/previsoes/{p['id']}", json={"valor": "50"}).status_code == 422
+    # o resto continua editavel
+    assert api.patch(f"/api/v1/previsoes/{p['id']}", json={"concluida": True}).json()["concluida"] is True
+
+
+def test_excluir_categoria_leva_as_previsoes_ligadas(api):
+    cat = _categoria(api)
+    criar(api, descricao="Estorno da mae", valor=None, categoria_id=cat)
+    criar(api)
+    assert api.delete(f"/api/v1/categorias/{cat}").status_code in (200, 204)
+    assert [p["descricao"] for p in api.get(f"/api/v1/previsoes?periodo={PERIODO}").json()["previsoes"]] == ["Salario"]

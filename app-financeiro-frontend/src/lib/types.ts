@@ -77,12 +77,22 @@ export interface StatusSincronizacao {
   }[];
 }
 
-/** Entrada esperada ou saida prevista de um periodo. `concluida` = ja recebida/paga (ja esta no saldo). */
+/**
+ * Entrada esperada ou saida prevista de um periodo. `concluida` = ja recebida/paga (ja esta no saldo).
+ * Com `categoria_id`, o valor e automatico (total da categoria no periodo) e a API devolve `valor` = null.
+ */
 export interface Previsao {
   id: string;
   periodo: string;
   tipo: Direcao;
   descricao: string;
-  valor: number;
+  valor: number | null;
   concluida: boolean;
+  categoria_id: string | null;
+}
+
+/** Previsao com o valor ja resolvido para exibir e somar (o automatico vem das transacoes). */
+export interface PrevisaoCalculada extends Omit<Previsao, "valor"> {
+  valor: number;
+  automatica: boolean;
 }

@@ -1,4 +1,4 @@
-import type { Categoria, Conta, Direcao, Metodo, Previsao, Transacao } from "./types";
+import type { Categoria, Conta, Direcao, Metodo, Previsao, PrevisaoCalculada, Transacao } from "./types";
 
 export const SEM_CATEGORIA = "__sem_categoria__";
 const COR_SEM_CATEGORIA = "#71717a";
@@ -120,12 +120,12 @@ export function comprasNoCredito(transacoes: Transacao[]) {
   return { total: total / 100, estornos: estornos / 100, quantidade };
 }
 
-/** Soma dos gastos (saidas) de UMA categoria no periodo. */
-export function totalDaCategoria(transacoes: Transacao[], categoriaId: string) {
+/** Soma de UMA categoria no periodo (por padrao, os gastos/saidas). */
+export function totalDaCategoria(transacoes: Transacao[], categoriaId: string, direcao: Direcao = "SAIDA") {
   let total = 0;
   let quantidade = 0;
   for (const t of transacoes) {
-    if (t.ignorar_no_fluxo || t.direcao !== "SAIDA" || t.categoria_id !== categoriaId) continue;
+    if (t.ignorar_no_fluxo || t.direcao !== direcao || t.categoria_id !== categoriaId) continue;
     total += emCentavos(t.valor);
     quantidade += 1;
   }
@@ -143,7 +143,20 @@ export function categoriaDeGastoPorNome(categorias: Categoria[], nome: string): 
  * Saldo presumido = saldo em conta + entradas esperadas - saidas previstas - fatura atual.
  * Previsoes marcadas como concluidas (ja recebidas/pagas) ficam de fora: elas ja estao refletidas no saldo.
  */
-export function saldoPresumido(saldoEmConta: number, faturaAtual: number, previsoes: Previsao[]) {
+/**
+ * Resolve o valor de cada previsao. As ligadas a uma categoria valem o total dessa categoria no periodo
+ * (ex.: "Estorno da mae" = tudo o que foi gasto em "Gastos da Mae"), contado no tipo da propria categoria.
+ */
+export function calcularPrevisoes(previsoes: Previsao[], transacoes: Transacao[], categorias: Categoria[]): PrevisaoCalculada[] {
+  const tipoDe = new Map(categorias.map((c) => [c.id, c.tipo]));
+  return previsoes.map((p) =>
+    p.categoria_id
+      ? { ...p, valor: totalDaCategoria(transacoes, p.categoria_id, tipoDe.get(p.categoria_id) ?? "SAIDA").total, automatica: true }
+      : { ...p, valor: p.valor ?? 0, automatica: false },
+  );
+}
+
+export function saldoPresumido(saldoEmConta: number, faturaAtual: number, previsoes: { tipo: Direcao; valor: number; concluida: boolean }[]) {
   let entradas = 0;
   let saidas = 0;
   for (const p of previsoes) {

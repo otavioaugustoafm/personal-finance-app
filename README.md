@@ -31,9 +31,10 @@ O passo a passo completo (GitHub, Neon, Lambda, API Gateway, agendamento e Ampli
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/002_ajustes_sincronizacao.sql
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/003_edicao_e_faturas.sql
    psql "$DATABASE_URL" -f app-financeiro-backend/migrations/004_previsoes.sql
+   psql "$DATABASE_URL" -f app-financeiro-backend/migrations/005_previsao_por_categoria.sql
    ```
    (Sem `psql`: cole o conteúdo de cada arquivo, na ordem, no **SQL Editor** do Neon.
-   Se você já rodou o 001, 002 e 003, rode só o 004.)
+   Se você já rodou do 001 ao 004, rode só o 005.)
 
 ### 2. Backend
 
