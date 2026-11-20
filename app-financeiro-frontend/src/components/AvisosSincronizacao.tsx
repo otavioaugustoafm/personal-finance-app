@@ -9,15 +9,15 @@ interface Props {
 
 function Faixa({ tipo, children }: { tipo: "erro" | "aviso" | "info"; children: React.ReactNode }) {
   const estilos = {
-    erro: "border-rose-500/30 bg-rose-500/10 text-rose-300",
-    aviso: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-    info: "border-zinc-700 bg-zinc-900 text-zinc-300",
+    erro: "border-saida/30 bg-saida/10 text-saida",
+    aviso: "border-aviso/30 bg-aviso/10 text-aviso",
+    info: "border-borda bg-painel text-suave",
   }[tipo];
   const Icone = tipo === "info" ? Info : TriangleAlert;
   return (
-    <div className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${estilos}`}>
+    <div className={`flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-sm leading-snug ${estilos}`}>
       <Icone className="mt-0.5 h-4 w-4 shrink-0" />
-      <div>{children}</div>
+      <div className="min-w-0 break-words">{children}</div>
     </div>
   );
 }
@@ -29,7 +29,7 @@ export default function AvisosSincronizacao({ status, desatualizado }: Props) {
   if (!ultima) {
     faixas.push(
       <Faixa key="nunca" tipo="info">
-        Ainda não houve nenhuma sincronização com o banco. Rode <code className="rounded bg-zinc-800 px-1">python -m src.sync</code> no backend.
+        Ainda não houve nenhuma sincronização com o banco. Rode <code className="rounded bg-painel-2 px-1">python -m src.sync</code> no backend.
       </Faixa>,
     );
   } else {

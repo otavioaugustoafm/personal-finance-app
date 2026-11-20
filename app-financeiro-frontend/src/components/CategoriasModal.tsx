@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Palette, Plus, Trash2, X } from "lucide-react";
+import { Palette, Plus, Trash2 } from "lucide-react";
+import Folha from "./Folha";
 import { api, mensagemDeErro } from "../lib/api";
 import { PALETA_CATEGORIAS, corNaoUsada, corrigirCoresRepetidas } from "../lib/calculos";
 import type { Categoria } from "../lib/types";
@@ -35,11 +36,11 @@ function SeletorDeCor({ valor, onChange, rotulo }: { valor: string | null; onCha
         onClick={() => setAberto((v) => !v)}
         aria-label={rotulo}
         aria-expanded={aberto}
-        className="h-6 w-6 rounded-full ring-2 ring-zinc-700 transition-transform hover:scale-110"
-        style={{ backgroundColor: valor ?? "#52525b" }}
+        className="h-8 w-8 rounded-full ring-2 ring-borda-forte ring-offset-2 ring-offset-painel transition-transform hover:scale-105"
+        style={{ backgroundColor: valor ?? "#6f8f91" }}
       />
       {aberto && (
-        <div className="absolute left-0 top-8 z-10 grid w-40 grid-cols-5 gap-2 rounded-xl border border-zinc-700 bg-zinc-900 p-3 shadow-2xl">
+        <div className="absolute left-0 top-10 z-10 grid w-52 grid-cols-5 gap-2.5 rounded-2xl border border-borda-forte bg-painel-2 p-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
           {PALETA_CATEGORIAS.map((cor) => (
             <button
               key={cor}
@@ -49,7 +50,7 @@ function SeletorDeCor({ valor, onChange, rotulo }: { valor: string | null; onCha
                 onChange(cor);
                 setAberto(false);
               }}
-              className={`h-5 w-5 rounded-full transition-transform hover:scale-125 ${valor?.toLowerCase() === cor ? "ring-2 ring-white" : ""}`}
+              className={`h-7 w-7 rounded-full transition-transform hover:scale-110 ${valor?.toLowerCase() === cor ? "ring-2 ring-texto ring-offset-2 ring-offset-painel-2" : ""}`}
               style={{ backgroundColor: cor }}
             />
           ))}
@@ -139,78 +140,77 @@ function CategoriasConteudo({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const grupos: [string, Categoria[]][] = [
+    ["Despesas", categorias.filter((c) => c.tipo === "SAIDA")],
+    ["Entradas", categorias.filter((c) => c.tipo === "ENTRADA")],
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-label="Gerenciar categorias" className="flex max-h-[90vh] w-full max-w-md flex-col rounded-2xl border border-zinc-700 bg-zinc-900 p-6 shadow-2xl">
-        <div className="mb-5 flex shrink-0 items-center justify-between">
-          <h2 className="text-xl font-semibold text-zinc-100">Gerenciar Categorias</h2>
-          <button onClick={onClose} aria-label="Fechar" className="rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100">
-            <X className="h-5 w-5" />
+    <Folha titulo="Categorias" subtitulo="Toque na bolinha para trocar a cor" onClose={onClose}>
+      {erro && <div role="alert" className="mb-3 rounded-xl border border-saida/30 bg-saida/10 px-3 py-2.5 text-sm text-saida">{erro}</div>}
+
+      <form onSubmit={handleCriar} className="mb-5 space-y-2.5 rounded-2xl border border-borda bg-fundo/60 p-3">
+        <div className="flex rounded-full bg-fundo p-0.5 text-sm" role="group" aria-label="Tipo da nova categoria">
+          {(["SAIDA", "ENTRADA"] as const).map((tipo) => (
+            <button
+              key={tipo}
+              type="button"
+              onClick={() => setTipoNovaCategoria(tipo)}
+              aria-pressed={tipoNovaCategoria === tipo}
+              className={`flex-1 rounded-full px-3 py-2 transition-colors ${
+                tipoNovaCategoria === tipo ? (tipo === "SAIDA" ? "bg-saida/15 text-saida" : "bg-entrada/15 text-entrada") : "text-apagado hover:text-suave"
+              }`}
+            >
+              {tipo === "SAIDA" ? "Despesa" : "Entrada"}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2.5">
+          <SeletorDeCor valor={corDaNova} onChange={setCorEscolhida} rotulo="Cor da nova categoria" />
+          <input
+            type="text"
+            value={novaCategoria}
+            onChange={(e) => setNovaCategoria(e.target.value)}
+            placeholder="Nome da nova categoria"
+            aria-label="Nome da nova categoria"
+            className="campo min-w-0 flex-1"
+          />
+          <button type="submit" disabled={ocupado || !novaCategoria.trim()} aria-label="Criar categoria" className="botao-acao shrink-0 px-3!">
+            <Plus className="h-5 w-5" />
           </button>
         </div>
+      </form>
 
-        {erro && <div role="alert" className="mb-3 shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{erro}</div>}
+      {repetidas.length > 0 && (
+        <button onClick={corrigirRepetidas} disabled={ocupado} className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-aviso/30 bg-aviso/10 px-3 py-2.5 text-sm text-aviso transition-colors hover:bg-aviso/20 disabled:opacity-50">
+          <Palette className="h-4 w-4 shrink-0" /> Dar cores diferentes às {repetidas.length} categorias com cor repetida
+        </button>
+      )}
 
-        <div className="mb-5 shrink-0 space-y-3">
-          <div className="flex gap-3">
-            {(["SAIDA", "ENTRADA"] as const).map((tipo) => (
-              <label
-                key={tipo}
-                className={`flex flex-1 cursor-pointer items-center justify-center rounded-xl border py-2.5 text-sm font-medium transition-colors ${
-                  tipoNovaCategoria === tipo
-                    ? tipo === "SAIDA" ? "border-rose-500 bg-rose-500/10 text-rose-400" : "border-emerald-500 bg-emerald-500/10 text-emerald-400"
-                    : "border-zinc-700 bg-zinc-800/50 text-zinc-300"
-                }`}
-              >
-                <input type="radio" value={tipo} checked={tipoNovaCategoria === tipo} onChange={() => setTipoNovaCategoria(tipo)} className="hidden" />
-                {tipo === "SAIDA" ? "Despesa" : "Entrada"}
-              </label>
-            ))}
-          </div>
-
-          <form onSubmit={handleCriar} className="flex items-center gap-2">
-            <SeletorDeCor valor={corDaNova} onChange={setCorEscolhida} rotulo="Cor da nova categoria" />
-            <input
-              type="text"
-              value={novaCategoria}
-              onChange={(e) => setNovaCategoria(e.target.value)}
-              placeholder="Nome da categoria..."
-              aria-label="Nome da nova categoria"
-              className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500"
-            />
-            <button type="submit" disabled={ocupado || !novaCategoria.trim()} aria-label="Adicionar categoria" className="flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-white transition-colors hover:bg-emerald-500 disabled:opacity-50">
-              <Plus className="h-5 w-5" />
-            </button>
-          </form>
-
-          {repetidas.length > 0 && (
-            <button onClick={corrigirRepetidas} disabled={ocupado} className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 py-2 text-sm text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50">
-              <Palette className="h-4 w-4" /> Dar cores diferentes às {repetidas.length} categoria(s) com cor repetida
-            </button>
-          )}
-        </div>
-
-        <div className="flex-1 space-y-2 overflow-y-auto pr-1">
-          {categorias.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-500">Nenhuma categoria encontrada.</p>
-          ) : (
-            categorias.map((cat) => (
-              <div key={cat.id} className="flex items-center justify-between rounded-xl border border-zinc-800/60 bg-zinc-800/30 p-3 transition-colors hover:bg-zinc-800/50">
-                <div className="flex min-w-0 items-center gap-3">
-                  <SeletorDeCor valor={cat.cor} onChange={(cor) => trocarCor(cat.id, cor)} rotulo={`Cor de ${cat.nome}`} />
-                  <span className="truncate text-sm font-medium text-zinc-200">{cat.nome}</span>
-                  <span className={`inline-flex shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${cat.tipo === "SAIDA" ? "border-rose-500/20 bg-rose-500/10 text-rose-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"}`}>
-                    {cat.tipo === "SAIDA" ? "Saída" : "Entrada"}
-                  </span>
-                </div>
-                <button onClick={() => handleDeletar(cat.id)} className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Excluir categoria" aria-label={`Excluir ${cat.nome}`}>
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
+      {categorias.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-borda py-8 text-center text-sm text-apagado">Nenhuma categoria ainda. Crie a primeira acima.</p>
+      ) : (
+        grupos.map(([titulo, lista]) =>
+          lista.length > 0 ? (
+            <div key={titulo} className="mb-4 last:mb-0">
+              <h3 className="mb-1.5 px-1 text-sm font-medium text-suave">{titulo} <span className="font-normal text-apagado">{lista.length}</span></h3>
+              <ul className="divide-y divide-borda/70 rounded-2xl border border-borda">
+                {lista.map((cat) => (
+                  <li key={cat.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <SeletorDeCor valor={cat.cor} onChange={(cor) => trocarCor(cat.id, cor)} rotulo={`Cor de ${cat.nome}`} />
+                      <span className="truncate text-[15px] text-texto sm:text-sm">{cat.nome}</span>
+                    </div>
+                    <button onClick={() => handleDeletar(cat.id)} className="rounded-full p-2 text-apagado transition-colors hover:bg-saida/10 hover:text-saida" title="Excluir categoria" aria-label={`Excluir ${cat.nome}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null,
+        )
+      )}
+    </Folha>
   );
 }

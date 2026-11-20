@@ -268,42 +268,56 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 px-4 py-6 text-zinc-100 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-6xl space-y-4">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">Controle Financeiro</h1>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900">
-              <button onClick={() => mudarMes(-1)} aria-label="Mês anterior" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="min-w-36 text-center leading-tight">
-                <span className="block text-sm font-medium first-letter:uppercase">{nomeDoMes(periodo.ano, periodo.mes)}</span>
-                <span className="block text-[11px] text-zinc-500">{rotuloPeriodo}</span>
-              </span>
-              <button onClick={() => mudarMes(1)} aria-label="Próximo mês" className="p-2 text-zinc-400 transition-colors hover:text-zinc-100">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+    <div className="min-h-dvh bg-fundo text-texto">
+      <header className="pt-seguro sticky top-0 z-40 border-b border-borda/70 bg-fundo/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-3 sm:px-6 lg:px-10">
+          <div className="hidden items-center gap-2.5 sm:flex sm:flex-1">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-latao font-display text-sm font-bold text-latao-tinta" aria-hidden="true">R$</span>
+            <h1 className="font-display text-lg font-semibold tracking-tight">Controle Financeiro</h1>
+          </div>
+
+          {/* troca de período: o principal controle de navegação */}
+          <div className="flex min-w-0 flex-1 items-center justify-between rounded-full bg-painel p-1 sm:max-w-xs sm:flex-none">
+            <button onClick={() => mudarMes(-1)} aria-label="Período anterior" className="rounded-full p-2.5 text-suave transition-colors hover:bg-painel-2 hover:text-texto sm:p-2">
+              <ChevronLeft className="h-5 w-5 sm:h-4 sm:w-4" />
+            </button>
+            <button
+              onClick={() => setPeriodo(periodoDeHoje(new Date()))}
+              title="Voltar ao período atual"
+              className="min-w-0 flex-1 truncate px-1 text-center leading-tight"
+            >
+              <span className="block truncate text-[15px] font-semibold first-letter:uppercase sm:text-sm">{nomeDoMes(periodo.ano, periodo.mes)}</span>
+              <span className="block text-xs text-apagado">{rotuloPeriodo}</span>
+            </button>
+            <button onClick={() => mudarMes(1)} aria-label="Próximo período" className="rounded-full p-2.5 text-suave transition-colors hover:bg-painel-2 hover:text-texto sm:p-2">
+              <ChevronRight className="h-5 w-5 sm:h-4 sm:w-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1 sm:flex-1 sm:justify-end">
             <button
               onClick={() => setModalCategorias(true)}
-              className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+              aria-label="Categorias"
+              className="flex items-center gap-2 rounded-full p-3 text-suave transition-colors hover:bg-painel hover:text-texto sm:px-3.5 sm:py-2"
             >
-              <Tags className="h-4 w-4" /> <span className="hidden sm:inline">Categorias</span>
+              <Tags className="h-5 w-5 sm:h-4 sm:w-4" /> <span className="hidden text-sm sm:inline">Categorias</span>
             </button>
             <button
               onClick={onLogout}
-              className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+              aria-label="Sair"
+              className="flex items-center gap-2 rounded-full p-3 text-suave transition-colors hover:bg-painel hover:text-texto sm:px-3.5 sm:py-2"
             >
-              <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sair</span>
+              <LogOut className="h-5 w-5 sm:h-4 sm:w-4" /> <span className="hidden text-sm sm:inline">Sair</span>
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
+      <main className="mx-auto max-w-6xl space-y-3 px-3 pb-[max(2rem,env(safe-area-inset-bottom))] pt-3 sm:space-y-4 sm:px-6 sm:pt-5 lg:px-10">
         {erro && (
-          <div className="flex items-center justify-between rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-            {erro}
-            <button onClick={() => setErro(null)} className="ml-3 text-rose-400 hover:text-rose-200">Fechar</button>
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-2xl border border-saida/30 bg-saida/10 px-4 py-3 text-sm text-saida">
+            <span className="min-w-0">{erro}</span>
+            <button onClick={() => setErro(null)} className="shrink-0 font-medium underline-offset-2 hover:underline">Fechar</button>
           </div>
         )}
 
@@ -331,13 +345,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
         <FiltrosTransacoes filtros={filtros} onChange={setFiltros} categorias={base?.categorias ?? []} mapaCategorias={mapa} />
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid items-start gap-3 sm:gap-4 lg:grid-cols-3">
           <div className="lg:col-span-1">
             <GastosPorCategoria gastos={gastos} tipo={tipoGrafico} onTipo={setTipoGrafico} selecionadas={filtros.categorias} onAlternar={alternarCategoria} />
           </div>
-          <div className="lg:col-span-2">
+          <div className="min-w-0 lg:col-span-2">
             <ListaTransacoes
-              key={`${periodo.ano}-${periodo.mes}`} // reinicia a selecao ao trocar de mes (os filtros permanecem)
+              key={`${periodo.ano}-${periodo.mes}`} // reinicia a seleção ao trocar de mês (os filtros permanecem)
               transacoes={filtradas}
               categorias={base?.categorias ?? []}
               mapaCategorias={mapa}
@@ -352,7 +366,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             />
           </div>
         </div>
-      </div>
+      </main>
 
       {editando && (
         <EditarTransacaoModal

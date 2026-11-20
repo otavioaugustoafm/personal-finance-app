@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { RotateCcw, X } from "lucide-react";
+import { useState } from "react";
+import { RotateCcw } from "lucide-react";
+import Folha from "./Folha";
 import { dataCompleta, lerValorBR, moeda } from "../lib/format";
 import type { Categoria, Direcao, Metodo, Transacao } from "../lib/types";
 
@@ -13,7 +14,7 @@ interface Props {
 }
 
 const ROTULO_METODO: Record<Metodo, string> = { PIX: "PIX", DEBITO: "Débito", CREDITO: "Crédito", OUTRO: "Outro" };
-const CAMPO = "w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500";
+const CAMPO = "campo";
 
 function lerParcela(texto: string): number | null | "invalido" {
   if (texto.trim() === "") return null;
@@ -24,9 +25,9 @@ function lerParcela(texto: string): number | null | "invalido" {
 function Campo({ rotulo, id, dica, children }: { rotulo: string; id: string; dica?: string | null; children: React.ReactNode }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-xs font-medium text-zinc-400">{rotulo}</label>
+      <label htmlFor={id} className="mb-1.5 block text-sm text-suave">{rotulo}</label>
       {children}
-      {dica && <p className="mt-1 text-xs text-amber-400/90">Banco informou: {dica}</p>}
+      {dica && <p className="mt-1 text-xs text-aviso">Banco informou: {dica}</p>}
     </div>
   );
 }
@@ -44,12 +45,6 @@ export default function EditarTransacaoModal({ transacao: t, categorias, onClose
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [confirmandoRestauracao, setConfirmandoRestauracao] = useState(false);
-
-  useEffect(() => {
-    const aoApertar = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", aoApertar);
-    return () => document.removeEventListener("keydown", aoApertar);
-  }, [onClose]);
 
   const o = t.original;
   const editado = (campo: string) => t.campos_editados.includes(campo);
@@ -95,99 +90,100 @@ export default function EditarTransacaoModal({ transacao: t, categorias, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="titulo-edicao" className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id="titulo-edicao" className="text-base font-semibold text-zinc-100">Editar transação</h2>
-          <button onClick={onClose} aria-label="Fechar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
-            <X className="h-4 w-4" />
+    <Folha titulo="Editar transação" subtitulo={`${dataCompleta(t.data)} · ${ROTULO_METODO[t.metodo]}`} onClose={onClose}
+      largura="lg"
+      rodape={
+        // fica sempre visível no rodapé, mesmo com o formulário rolado
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="botao-sutil flex-1 sm:flex-none">Cancelar</button>
+          <button type="submit" form="form-edicao" disabled={ocupado} className="botao-acao flex-1 sm:ml-auto sm:flex-none sm:px-6">
+            {ocupado ? "Salvando…" : "Salvar"}
           </button>
         </div>
+      }
+    >
+      <form id="form-edicao" onSubmit={salvar} className="space-y-4">
+        {erro && <div role="alert" className="rounded-xl border border-saida/30 bg-saida/10 px-3 py-2.5 text-sm text-saida">{erro}</div>}
 
-        <form onSubmit={salvar} className="space-y-3">
-          {erro && <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{erro}</div>}
+        <Campo rotulo="Descrição" id="ed-descricao" dica={editado("descricao") ? o.descricao : null}>
+          <input id="ed-descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={200} className={CAMPO} />
+        </Campo>
 
-          <Campo rotulo="Descrição" id="ed-descricao" dica={editado("descricao") ? o.descricao : null}>
-            <input id="ed-descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={200} autoFocus className={CAMPO} />
+        <div className="grid grid-cols-2 gap-3">
+          <Campo rotulo="Valor (R$)" id="ed-valor" dica={editado("valor") ? moeda(Number(o.valor)) : null}>
+            <input id="ed-valor" value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" className={CAMPO} />
           </Campo>
+          <Campo rotulo="Data" id="ed-data" dica={editado("data") ? dataCompleta(o.data) : null}>
+            <input id="ed-data" type="date" value={data} onChange={(e) => setData(e.target.value)} className={CAMPO} />
+          </Campo>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Campo rotulo="Valor (R$)" id="ed-valor" dica={editado("valor") ? moeda(Number(o.valor)) : null}>
-              <input id="ed-valor" value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" className={CAMPO} />
-            </Campo>
-            <Campo rotulo="Data" id="ed-data" dica={editado("data") ? dataCompleta(o.data) : null}>
-              <input id="ed-data" type="date" value={data} onChange={(e) => setData(e.target.value)} className={CAMPO} />
-            </Campo>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Campo rotulo="Tipo" id="ed-direcao" dica={editado("direcao") ? (o.direcao === "SAIDA" ? "Saída" : "Entrada") : null}>
-              <select id="ed-direcao" value={direcao} onChange={(e) => setDirecao(e.target.value as Direcao)} className={CAMPO}>
-                <option value="SAIDA">Saída</option>
-                <option value="ENTRADA">Entrada</option>
-              </select>
-            </Campo>
-            <Campo rotulo="Forma" id="ed-metodo" dica={editado("metodo") ? ROTULO_METODO[o.metodo] : null}>
-              <select id="ed-metodo" value={metodo} onChange={(e) => setMetodo(e.target.value as Metodo)} className={CAMPO}>
-                {(Object.keys(ROTULO_METODO) as Metodo[]).map((m) => (
-                  <option key={m} value={m}>{ROTULO_METODO[m]}</option>
-                ))}
-              </select>
-            </Campo>
-          </div>
-
-          <Campo rotulo="Categoria" id="ed-categoria">
-            <select id="ed-categoria" value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={CAMPO}>
-              <option value="">Sem categoria</option>
-              {tiposDeCategoria.map((tipo) => {
-                const lista = categorias.filter((c) => c.tipo === tipo);
-                return lista.length ? (
-                  <optgroup key={tipo} label={tipo === "SAIDA" ? "Despesas" : "Entradas"}>
-                    {lista.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </optgroup>
-                ) : null;
-              })}
+        <div className="grid grid-cols-2 gap-3">
+          <Campo rotulo="Tipo" id="ed-direcao" dica={editado("direcao") ? (o.direcao === "SAIDA" ? "Saída" : "Entrada") : null}>
+            <select id="ed-direcao" value={direcao} onChange={(e) => setDirecao(e.target.value as Direcao)} className={CAMPO}>
+              <option value="SAIDA">Saída</option>
+              <option value="ENTRADA">Entrada</option>
             </select>
           </Campo>
+          <Campo rotulo="Forma" id="ed-metodo" dica={editado("metodo") ? ROTULO_METODO[o.metodo] : null}>
+            <select id="ed-metodo" value={metodo} onChange={(e) => setMetodo(e.target.value as Metodo)} className={CAMPO}>
+              {(Object.keys(ROTULO_METODO) as Metodo[]).map((m) => (
+                <option key={m} value={m}>{ROTULO_METODO[m]}</option>
+              ))}
+            </select>
+          </Campo>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Campo rotulo="Parcela atual" id="ed-parcela" dica={editado("parcela_atual") ? String(o.parcela_atual ?? "—") : null}>
-              <input id="ed-parcela" value={parcelaAtual} onChange={(e) => setParcelaAtual(e.target.value)} inputMode="numeric" placeholder="—" className={CAMPO} />
-            </Campo>
-            <Campo rotulo="Total de parcelas" id="ed-total" dica={editado("total_parcelas") ? String(o.total_parcelas ?? "—") : null}>
-              <input id="ed-total" value={totalParcelas} onChange={(e) => setTotalParcelas(e.target.value)} inputMode="numeric" placeholder="—" className={CAMPO} />
-            </Campo>
-          </div>
+        <Campo rotulo="Categoria" id="ed-categoria">
+          <select id="ed-categoria" value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className={CAMPO}>
+            <option value="">Sem categoria</option>
+            {tiposDeCategoria.map((tipo) => {
+              const lista = categorias.filter((c) => c.tipo === tipo);
+              return lista.length ? (
+                <optgroup key={tipo} label={tipo === "SAIDA" ? "Despesas" : "Entradas"}>
+                  {lista.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </optgroup>
+              ) : null;
+            })}
+          </select>
+        </Campo>
 
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-300">
-            <input type="checkbox" checked={ignorar} onChange={(e) => setIgnorar(e.target.checked)} />
-            Não contar no fluxo de caixa (ex.: pagamento de fatura)
-          </label>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo rotulo="Parcela atual" id="ed-parcela" dica={editado("parcela_atual") ? String(o.parcela_atual ?? "—") : null}>
+            <input id="ed-parcela" value={parcelaAtual} onChange={(e) => setParcelaAtual(e.target.value)} inputMode="numeric" placeholder="—" className={CAMPO} />
+          </Campo>
+          <Campo rotulo="Total de parcelas" id="ed-total" dica={editado("total_parcelas") ? String(o.total_parcelas ?? "—") : null}>
+            <input id="ed-total" value={totalParcelas} onChange={(e) => setTotalParcelas(e.target.value)} inputMode="numeric" placeholder="—" className={CAMPO} />
+          </Campo>
+        </div>
 
-          <p className="text-xs text-zinc-500">O que você editar não é desfeito pela sincronização diária. Campos que você não mexer continuam acompanhando o banco.</p>
+        <label className="flex items-start gap-3 rounded-xl border border-borda bg-fundo/60 px-3.5 py-3 text-sm text-texto">
+          <input type="checkbox" checked={ignorar} onChange={(e) => setIgnorar(e.target.checked)} className="mt-0.5 shrink-0" />
+          <span>
+            Não contar no fluxo de caixa
+            <span className="block text-xs text-apagado">Use para pagamento de fatura e transferências entre suas contas.</span>
+          </span>
+        </label>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            {t.campos_editados.length > 0 ? (
-              confirmandoRestauracao ? (
-                <span className="flex items-center gap-2 text-sm">
-                  <button type="button" onClick={restaurar} disabled={ocupado} className="rounded-lg bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:opacity-50">Confirmar</button>
-                  <button type="button" onClick={() => setConfirmandoRestauracao(false)} className="text-zinc-400 hover:text-zinc-200">Voltar</button>
-                </span>
-              ) : (
-                <button type="button" onClick={() => setConfirmandoRestauracao(true)} className="flex items-center gap-1.5 text-sm text-amber-400 hover:text-amber-300">
-                  <RotateCcw className="h-4 w-4" /> Restaurar valores do banco
-                </button>
-              )
-            ) : <span />}
-            <span className="flex gap-2">
-              <button type="button" onClick={onClose} className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">Cancelar</button>
-              <button type="submit" disabled={ocupado} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
-                {ocupado ? "Salvando..." : "Salvar"}
+        <p className="text-xs leading-relaxed text-apagado">O que você editar não é desfeito pela sincronização. Campos que você não mexer continuam acompanhando o banco.</p>
+
+        {t.campos_editados.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-borda pt-4">
+            {confirmandoRestauracao ? (
+              <>
+                <span className="text-sm text-suave">Voltar tudo ao que o banco informou?</span>
+                <button type="button" onClick={restaurar} disabled={ocupado} className="rounded-xl bg-aviso px-3 py-2 text-sm font-semibold text-latao-tinta disabled:opacity-50">Restaurar</button>
+                <button type="button" onClick={() => setConfirmandoRestauracao(false)} className="text-sm text-suave hover:text-texto">Cancelar</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setConfirmandoRestauracao(true)} className="flex items-center gap-1.5 text-sm text-aviso hover:text-latao-forte">
+                <RotateCcw className="h-4 w-4" /> Restaurar valores do banco
               </button>
-            </span>
+            )}
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+      </form>
+    </Folha>
   );
 }

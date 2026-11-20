@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import Folha from "./Folha";
 import { lerValorBR, moeda } from "../lib/format";
 import type { Direcao, Previsao } from "../lib/types";
 
@@ -22,7 +23,8 @@ interface Props {
   onExcluir: (id: string) => Promise<string | null>;
 }
 
-const CAMPO = "rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500";
+const CAMPO = "campo";
+const BOTAO_ICONE = "rounded-full p-2 text-apagado transition-colors hover:bg-painel-2 hover:text-texto";
 
 function Linha({ p, onAtualizar, onExcluir, onErro }: { p: Previsao; onAtualizar: Props["onAtualizar"]; onExcluir: Props["onExcluir"]; onErro: (m: string | null) => void }) {
   const [editando, setEditando] = useState(false);
@@ -44,7 +46,7 @@ function Linha({ p, onAtualizar, onExcluir, onErro }: { p: Previsao; onAtualizar
   };
 
   return (
-    <li className={`flex items-center gap-3 rounded-xl border border-zinc-800/60 bg-zinc-800/30 px-3 py-2.5 ${p.concluida ? "opacity-60" : ""}`}>
+    <li className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-borda bg-fundo/50 px-3.5 py-2.5 ${p.concluida ? "opacity-55" : ""}`}>
       <input
         type="checkbox"
         checked={p.concluida}
@@ -54,20 +56,20 @@ function Linha({ p, onAtualizar, onExcluir, onErro }: { p: Previsao; onAtualizar
       />
       {editando ? (
         <>
-          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} aria-label="Descrição" maxLength={120} className={`${CAMPO} min-w-0 flex-1 py-1.5`} />
-          <input value={valor} onChange={(e) => setValor(e.target.value)} aria-label="Valor" inputMode="decimal" className={`${CAMPO} w-28 py-1.5`} />
-          <button onClick={salvar} aria-label="Salvar alteração" className="rounded-lg p-1.5 text-emerald-400 hover:bg-zinc-800"><Check className="h-4 w-4" /></button>
-          <button onClick={() => setEditando(false)} aria-label="Cancelar edição" className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800"><X className="h-4 w-4" /></button>
+          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} aria-label="Descrição" maxLength={120} className={`${CAMPO} min-w-0 flex-1 basis-40`} />
+          <input value={valor} onChange={(e) => setValor(e.target.value)} aria-label="Valor" inputMode="decimal" className={`${CAMPO} w-28!`} />
+          <button onClick={salvar} aria-label="Salvar alteração" className="rounded-full p-2 text-entrada hover:bg-painel-2"><Check className="h-4 w-4" /></button>
+          <button onClick={() => setEditando(false)} aria-label="Cancelar edição" className={BOTAO_ICONE}><X className="h-4 w-4" /></button>
         </>
       ) : (
         <>
-          <span className={`min-w-0 flex-1 truncate text-sm text-zinc-200 ${p.concluida ? "line-through" : ""}`} title={p.descricao}>{p.descricao}</span>
-          <span className={`shrink-0 text-sm font-medium tabular-nums ${entrada ? "text-emerald-400" : "text-rose-400"}`}>{entrada ? "+" : "−"} {moeda(p.valor)}</span>
-          <button onClick={() => setEditando(true)} aria-label={`Editar ${p.descricao}`} className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"><Pencil className="h-4 w-4" /></button>
+          <span className={`min-w-0 flex-1 truncate text-[15px] text-texto sm:text-sm ${p.concluida ? "line-through" : ""}`} title={p.descricao}>{p.descricao}</span>
+          <span className={`shrink-0 text-sm font-medium tabular-nums ${entrada ? "text-entrada" : "text-saida"}`}>{entrada ? "+" : "−"} {moeda(p.valor)}</span>
+          <button onClick={() => setEditando(true)} aria-label={`Editar ${p.descricao}`} className={`${BOTAO_ICONE} -mx-1`}><Pencil className="h-4 w-4" /></button>
           <button
             onClick={async () => onErro(await onExcluir(p.id))}
             aria-label={`Excluir ${p.descricao}`}
-            className="rounded-lg p-1.5 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400"
+            className="-mx-1 rounded-full p-2 text-apagado transition-colors hover:bg-saida/10 hover:text-saida"
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -83,12 +85,6 @@ export default function PrevisoesModal({ tituloPeriodo, previsoes, resumo, onClo
   const [valor, setValor] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
-
-  useEffect(() => {
-    const aoApertar = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", aoApertar);
-    return () => document.removeEventListener("keydown", aoApertar);
-  }, [onClose]);
 
   const adicionar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,48 +102,50 @@ export default function PrevisoesModal({ tituloPeriodo, previsoes, resumo, onClo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="titulo-previsoes" className="flex max-h-[92vh] w-full max-w-lg flex-col rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
-        <div className="mb-3 flex shrink-0 items-start justify-between">
-          <div>
-            <h2 id="titulo-previsoes" className="text-lg font-semibold text-zinc-100">Previsões do período</h2>
-            <p className="text-xs text-zinc-500">{tituloPeriodo}</p>
-          </div>
-          <button onClick={onClose} aria-label="Fechar" className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"><X className="h-5 w-5" /></button>
+    <Folha titulo="Previsões do período" subtitulo={tituloPeriodo} onClose={onClose} largura="lg">
+      <div className="mb-4 rounded-2xl border border-borda bg-fundo/60 p-4 text-[15px] tabular-nums sm:text-sm">
+        <div className="flex justify-between py-0.5 text-suave"><span>Saldo em conta</span><span>{moeda(resumo.saldoEmConta)}</span></div>
+        <div className="flex justify-between py-0.5 text-entrada"><span>+ Entradas esperadas</span><span>{moeda(resumo.aReceber)}</span></div>
+        <div className="flex justify-between py-0.5 text-saida"><span>− Saídas previstas</span><span>{moeda(resumo.aPagar)}</span></div>
+        <div className="flex justify-between py-0.5 text-saida"><span>− Fatura atual</span><span>{moeda(resumo.faturaAtual)}</span></div>
+        <div className={`mt-2 flex items-baseline justify-between border-t border-dashed border-borda-forte pt-2.5 ${resumo.presumido >= 0 ? "text-latao" : "text-saida"}`}>
+          <span className="text-suave">Saldo presumido</span>
+          <span className="font-display text-xl font-semibold">{moeda(resumo.presumido)}</span>
         </div>
-
-        <div className="mb-3 shrink-0 space-y-1 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm tabular-nums">
-          <div className="flex justify-between text-zinc-400"><span>Saldo em conta</span><span>{moeda(resumo.saldoEmConta)}</span></div>
-          <div className="flex justify-between text-emerald-400"><span>+ Entradas esperadas</span><span>{moeda(resumo.aReceber)}</span></div>
-          <div className="flex justify-between text-rose-400"><span>− Saídas previstas</span><span>{moeda(resumo.aPagar)}</span></div>
-          <div className="flex justify-between text-rose-400"><span>− Fatura atual</span><span>{moeda(resumo.faturaAtual)}</span></div>
-          <div className={`flex justify-between border-t border-zinc-800 pt-1.5 font-semibold ${resumo.presumido >= 0 ? "text-zinc-100" : "text-rose-400"}`}>
-            <span>= Saldo presumido</span><span>{moeda(resumo.presumido)}</span>
-          </div>
-        </div>
-
-        {erro && <div role="alert" className="mb-3 shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{erro}</div>}
-
-        <form onSubmit={adicionar} className="mb-3 flex shrink-0 flex-wrap gap-2">
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as Direcao)} aria-label="Tipo da previsão" className={CAMPO}>
-            <option value="ENTRADA">Entrada esperada</option>
-            <option value="SAIDA">Saída prevista</option>
-          </select>
-          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descrição (ex.: Salário)" aria-label="Descrição da previsão" maxLength={120} className={`${CAMPO} min-w-40 flex-1`} />
-          <input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="Valor" aria-label="Valor da previsão" inputMode="decimal" className={`${CAMPO} w-28`} />
-          <button type="submit" disabled={ocupado} aria-label="Adicionar previsão" className="flex items-center rounded-xl bg-emerald-600 px-3 text-white hover:bg-emerald-500 disabled:opacity-50"><Plus className="h-5 w-5" /></button>
-        </form>
-
-        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-          {previsoes.length === 0 ? (
-            <li className="py-6 text-center text-sm text-zinc-500">Nenhuma previsão neste período. Adicione o que você espera receber ou pagar.</li>
-          ) : (
-            previsoes.map((p) => <Linha key={p.id} p={p} onAtualizar={onAtualizar} onExcluir={onExcluir} onErro={setErro} />)
-          )}
-        </ul>
-
-        <p className="mt-3 shrink-0 text-xs text-zinc-500">Quando o dinheiro chegar (ou o pagamento sair), marque a caixa: o valor já estará no saldo e não deve ser somado de novo.</p>
       </div>
-    </div>
+
+      {erro && <div role="alert" className="mb-3 rounded-xl border border-saida/30 bg-saida/10 px-3 py-2.5 text-sm text-saida">{erro}</div>}
+
+      <form onSubmit={adicionar} className="mb-4 space-y-2">
+        <div className="flex rounded-full bg-fundo p-0.5 text-sm" role="group" aria-label="Tipo da previsão">
+          {(["ENTRADA", "SAIDA"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTipo(t)}
+              aria-pressed={tipo === t}
+              className={`flex-1 rounded-full px-3 py-2 transition-colors ${tipo === t ? (t === "ENTRADA" ? "bg-entrada/15 text-entrada" : "bg-saida/15 text-saida") : "text-apagado hover:text-suave"}`}
+            >
+              {t === "ENTRADA" ? "Vou receber" : "Vou pagar"}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === "ENTRADA" ? "Ex.: Salário" : "Ex.: Aluguel"} aria-label="Descrição da previsão" maxLength={120} className={`${CAMPO} min-w-0 flex-1`} />
+          <input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" aria-label="Valor da previsão" inputMode="decimal" className={`${CAMPO} w-28!`} />
+          <button type="submit" disabled={ocupado} aria-label="Adicionar previsão" className="botao-acao shrink-0 px-3!"><Plus className="h-5 w-5" /></button>
+        </div>
+      </form>
+
+      <ul className="space-y-2">
+        {previsoes.length === 0 ? (
+          <li className="rounded-2xl border border-dashed border-borda py-8 text-center text-sm text-apagado">Nada anotado neste período. Adicione o que você espera receber ou pagar.</li>
+        ) : (
+          previsoes.map((p) => <Linha key={p.id} p={p} onAtualizar={onAtualizar} onExcluir={onExcluir} onErro={setErro} />)
+        )}
+      </ul>
+
+      <p className="mt-4 text-xs leading-relaxed text-apagado">Quando o dinheiro entrar (ou o pagamento sair), marque a caixa: o valor já estará no saldo e deixa de entrar na conta.</p>
+    </Folha>
   );
 }

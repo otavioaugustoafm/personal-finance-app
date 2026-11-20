@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LockKeyhole } from "lucide-react";
 import { api } from "../lib/api";
 import { salvarToken } from "../lib/auth";
 
@@ -21,40 +22,44 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       onLoginSuccess();
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } }).response?.status;
-      setErro(status === 401 ? "Senha incorreta." : "Nao foi possivel conectar ao servidor.");
+      setErro(status === 401 ? "Senha incorreta. Tente de novo." : "Não foi possível falar com o servidor. Verifique sua conexão.");
     } finally {
       setCarregando(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl">
-        <h1 className="mb-1 text-xl font-semibold tracking-tight text-zinc-100">Controle Financeiro</h1>
-        <p className="mb-6 text-sm text-zinc-400">Informe a senha de acesso.</p>
-
-        {erro && (
-          <div className="mb-4 rounded-lg border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-400">
-            {erro}
+    <div className="pt-seguro flex min-h-dvh flex-col justify-end bg-fundo px-5 pb-10 sm:items-center sm:justify-center sm:pb-0">
+      <div className="w-full sm:max-w-sm">
+        <div className="mb-8">
+          <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-latao text-latao-tinta">
+            <LockKeyhole className="h-6 w-6" strokeWidth={2.2} />
           </div>
-        )}
+          <h1 className="font-display text-4xl font-semibold leading-none tracking-tight text-texto">Suas finanças</h1>
+          <p className="mt-3 text-base text-suave">Digite a senha para ver o painel desta semana.</p>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <label htmlFor="senha" className="sr-only">Senha</label>
           <input
+            id="senha"
             type="password"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             placeholder="Senha"
             autoFocus
+            autoComplete="current-password"
             required
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+            aria-invalid={!!erro}
+            className="campo py-3.5! text-base!"
           />
-          <button
-            type="submit"
-            disabled={carregando}
-            className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-          >
-            {carregando ? "Entrando..." : "Entrar"}
+          {erro && (
+            <p role="alert" className="text-sm text-saida">
+              {erro}
+            </p>
+          )}
+          <button type="submit" disabled={carregando} className="botao-acao w-full py-3.5! text-base!">
+            {carregando ? "Entrando…" : "Entrar"}
           </button>
         </form>
       </div>
